@@ -1,0 +1,11 @@
+name: 'Synoptic GitHub'
+description: 'Update the README with a list of user repositories.'
+inputs:
+  GITHUB_TOKEN:
+    description: 'GitHub token'
+    required: true
+runs:
+  using: 'composite'
+  steps:
+    - run: ${{ github.action_path }}/entrypoint.sh
+      shell: bash
