@@ -1,30 +1,54 @@
 #!/bin/bash
 set -e
 
-# Check if environment variables are set
-if [[ -z "$INPUT_GITHUB_TOKEN" ]]; then
-    echo "Error: INPUT_GITHUB_TOKEN is not set!"
+# Default settings (all fields on by default)
+SHOW_STARS=${SHOW_STARS:-true}
+SHOW_FORKS=${SHOW_FORKS:-true}
+SHOW_ISSUES=${SHOW_ISSUES:-true}
+SHOW_LANGUAGE=${SHOW_LANGUAGE:-true}
+SHOW_TOPICS=${SHOW_TOPICS:-true}
+SHOW_DESCRIPTION=${SHOW_DESCRIPTION:-true}
+
+# Check if gh is installed
+if ! command -v gh &> /dev/null; then
+    echo "Error: GitHub CLI (gh) is not installed!"
     exit 1
 fi
 
-if [[ -z "$GITHUB_ACTOR" ]]; then
-    echo "Error: GITHUB_ACTOR is not set!"
+# Check authentication status with GitHub CLI
+if ! gh auth status &>/dev/null; then
+    echo "Not authenticated with GitHub CLI."
+    
+    # Check if GITHUB_TOKEN is provided for authentication
+    if [[ -z "$GITHUB_TOKEN" ]]; then
+        echo "Error: GITHUB_TOKEN is not set. Please provide a token for authentication."
+        exit 1
+    fi
+    
+    # Authenticate with gh using the provided token
+    echo "Logging in with provided GITHUB_TOKEN..."
+    gh auth login --with-token <<< "$GITHUB_TOKEN"
+fi
+
+# Use the gh CLI to fetch the list of public repositories, sorted by last updated
+if ! RESPONSE=$(gh api "user/repos?visibility=public&sort=updated&direction=desc&per_page=100"); then
+    echo "Error: Failed to fetch repositories. Please check your authentication or other settings."
     exit 1
 fi
 
-# Fetch the list of repositories using GitHub API
-REPOS=$(curl -s -H "Authorization: token $INPUT_GITHUB_TOKEN" \
-            "https://api.github.com/users/$GITHUB_ACTOR/repos?sort=updated&direction=desc" | \
-            jq -r '.[] | "- [\(.name)](\(.html_url))"')
+# Use jq to parse and format the list of repositories with conditional fields
+REPOS=$(echo "$RESPONSE" | jq --arg show_stars "$SHOW_STARS" --arg show_forks "$SHOW_FORKS" --arg show_issues "$SHOW_ISSUES" --arg show_language "$SHOW_LANGUAGE" --arg show_topics "$SHOW_TOPICS" --arg show_description "$SHOW_DESCRIPTION" -r '
+  .[] | 
+  "- [\(.name)](\(.html_url))" + 
+  (if $show_description == "true" and .description and .description != "No description provided" then " - \(.description)" else "" end) +
+  (if $show_stars == "true" then " (⭐ \(.stargazers_count)" else "" end) +
+  (if $show_forks == "true" then " | 🍴 \(.forks_count)" else "" end) +
+  (if $show_issues == "true" then " | ❗ \(.open_issues_count))" else (if $show_stars == "true" or $show_forks == "true" then ")" else "" end) end) +
+  (if $show_language == "true" and .language then " - Written in \(.language)" else "" end) +
+  (if $show_topics == "true" and (.topics | length) > 0 then " - Topics: \(.topics | join(", "))" else "" end) +
+  "\n"')
 
-# Replace the content between <!-- PROJECTS_START --> and <!-- PROJECTS_END --> in README.md
-sed -i '/<!-- PROJECTS_START -->/,/<!-- PROJECTS_END -->/c\<!-- PROJECTS_START -->\n'$REPOS'\n<!-- PROJECTS_END -->' README.md
 
-# Commit and push changes
-git config --local user.email "action@github.com"
-git config --local user.name "GitHub Action"
-git add README.md
-if ! git diff --staged --quiet; then
-  git commit -m "Update README with latest list of repositories"
-  git push
-fi
+# Output to the README.md file
+echo -e "# My Repositories\n" > README.md
+echo -e "$REPOS" >> README.md
