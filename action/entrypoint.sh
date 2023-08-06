@@ -30,12 +30,6 @@ if ! gh auth status >/dev/null; then
     echo "$GITHUB_TOKEN" | gh auth login --with-token
 fi
 
-# Use the gh CLI to fetch the list of public repositories, sorted by last updated
-if ! RESPONSE=$(gh api "user/repos?visibility=public&sort=updated&direction=desc&per_page=100"); then
-    echo "Error: Failed to fetch repositories. Please check your authentication or other settings."
-    exit 1
-fi
-
 # Parse language emojis if SHOW_LANGUAGE is set to true
 LANG_EMOJIS_STR=""
 if [ "$SHOW_LANGUAGE" = "true" ]; then
@@ -51,8 +45,26 @@ else
     LANG_EMOJIS_JSON="{}"
 fi
 
-# Use jq to parse and format the list of repositories with conditional fields
-REPOS=$(echo "$RESPONSE" | jq --argjson lang_emojis "$LANG_EMOJIS_JSON" --arg show_stars "$SHOW_STARS" --arg show_forks "$SHOW_FORKS" --arg show_issues "$SHOW_ISSUES" --arg show_language "$SHOW_LANGUAGE" --arg show_topics "$SHOW_TOPICS" --arg show_description "$SHOW_DESCRIPTION" -r '
+PAGE=1
+ALL_REPOS=""
+
+while :; do
+    # Fetch a page of repositories
+    RESPONSE=$(gh api "user/repos?visibility=public&sort=updated&direction=desc&per_page=100&page=$PAGE")
+    
+    # Break if no repositories are returned
+    if [ "$(echo "$RESPONSE" | jq 'length')" -eq 0 ]; then
+        break
+    fi
+
+    # Append to all_repos
+    ALL_REPOS="$ALL_REPOS$RESPONSE"
+
+    # Increment page for next iteration
+    PAGE=$((PAGE + 1))
+done
+
+REPOS=$(echo "$ALL_REPOS" | jq --argjson lang_emojis "$LANG_EMOJIS_JSON" --arg show_stars "$SHOW_STARS" --arg show_forks "$SHOW_FORKS" --arg show_issues "$SHOW_ISSUES" --arg show_language "$SHOW_LANGUAGE" --arg show_topics "$SHOW_TOPICS" --arg show_description "$SHOW_DESCRIPTION" -r '
   .[] | 
   "- [\(.name)](\(.html_url))" + 
   (if $show_description == "true" and .description and .description != "No description provided" then " - \(.description)" else "" end) +
