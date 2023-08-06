@@ -65,10 +65,7 @@ while :; do
     PAGE=$((PAGE + 1))
 done
 
-# Replace the previous RESPONSE=... line with the above loop.
-
-# Later, when parsing with jq, use $ALL_REPOS instead of $RESPONSE:
-REPOS=$(echo "$ALL_REPOS" | jq  --argjson lang_emojis "$LANG_EMOJIS_JSON" --arg show_stars "$SHOW_STARS" --arg show_forks "$SHOW_FORKS" --arg show_issues "$SHOW_ISSUES" --arg show_language "$SHOW_LANGUAGE" --arg show_topics "$SHOW_TOPICS" --arg show_description "$SHOW_DESCRIPTION" -r '
+REPOS=$(echo "$ALL_REPOS" | jq --argjson lang_emojis "$LANG_EMOJIS_JSON" --arg show_stars "$SHOW_STARS" --arg show_forks "$SHOW_FORKS" --arg show_issues "$SHOW_ISSUES" --arg show_language "$SHOW_LANGUAGE" --arg show_topics "$SHOW_TOPICS" --arg show_description "$SHOW_DESCRIPTION" -r '
   .[] | 
   "- [\(.name)](\(.html_url))" + 
   (if $show_description == "true" and .description and .description != "No description provided" then " - \(.description)" else "" end) +
