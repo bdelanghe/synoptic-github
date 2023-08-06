@@ -1,0 +1,20 @@
+name: Synoptic GitHub
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 0 * * *' # This will run the action daily at midnight
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v2
+      
+    - name: Run Synoptic GitHub Action
+      uses: ./.github/workflows/action.yml
+      with:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
