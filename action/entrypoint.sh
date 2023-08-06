@@ -45,6 +45,7 @@ else
     LANG_EMOJIS_JSON="{}"
 fi
 
+# Initialize page and the all_repos variable to store all repositories across pages
 PAGE=1
 ALL_REPOS=""
 
@@ -79,3 +80,18 @@ REPOS=$(echo "$ALL_REPOS" | jq --argjson lang_emojis "$LANG_EMOJIS_JSON" --arg s
 printf "# My Repositories\n\n" > README.md
 printf "%s" "$REPOS" >> README.md
 printf "\n" >> README.md
+
+# Check if there are changes
+if ! git diff --exit-code > /dev/null; then
+    # Configure Git
+    git config --local user.email "actions@github.com"
+    git config --local user.name "GitHub Action"
+
+    # Add changes to README.md
+    git add README.md
+
+    # Commit and push the changes
+    git commit -m "Automatically updated README with latest repositories"
+    git push origin main
+fi
+
