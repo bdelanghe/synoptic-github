@@ -30,6 +30,9 @@ export const Corpus = z.object({
   provenance: Provenance,
   owner: z.string().describe("Display owner (login)."),
   name: z.string().describe("Display name (or login)."),
+  bio: z.string().nullable().describe("GitHub profile bio — the header intro."),
+  blog: z.string().nullable().describe("Profile website URL, or null."),
+  location: z.string().nullable().describe("Profile location, or null."),
   repos: z.array(Repo).describe("Public, non-fork, non-archived repos, stable-sorted."),
 });
 export type Corpus = z.infer<typeof Corpus>;

@@ -43,7 +43,9 @@ async function ghAll(path: string): Promise<any[]> {
 // fall back to /user (a user/PAT token) for local runs.
 // (Not USERNAME — that collides with the ambient shell/OS variable.)
 const GH_USER = process.env.GH_USER || process.env.GITHUB_REPOSITORY_OWNER;
-const user = (GH_USER ? await gh(`/users/${GH_USER}`) : await gh("/user")) as { name?: string; login: string };
+const user = (GH_USER ? await gh(`/users/${GH_USER}`) : await gh("/user")) as {
+  name?: string; login: string; bio?: string | null; blog?: string | null; location?: string | null;
+};
 const isMeta = (r: any) => r.name === ".github" || r.name.toLowerCase() === user.login.toLowerCase();
 const reposPath = GH_USER ? `/users/${user.login}/repos?type=owner` : "/user/repos?affiliation=owner&visibility=public";
 const repos = ((await ghAll(reposPath)) as any[])
@@ -62,7 +64,10 @@ const provenance: Provenance = {
   owner: user.login,
   sourceEpoch: Number(process.env.SOURCE_DATE_EPOCH ?? 0) || 0,
 };
-const corpus = Corpus.parse({ provenance, owner: user.login, name: user.name || user.login, repos });
+const corpus = Corpus.parse({
+  provenance, owner: user.login, name: user.name || user.login,
+  bio: user.bio ?? null, blog: user.blog || null, location: user.location ?? null, repos,
+});
 
 // ---- modes -------------------------------------------------------------------
 if (MODE === "validate") {
@@ -102,10 +107,15 @@ if (MODE === "validate") {
   const line = (r: Repo) =>
     `- [${r.name}](${r.url})` + (r.description ? ` — ${r.description}` : "") + (r.language ? ` \`${emojis[r.language] ?? ""}${r.language}\`` : "");
 
-  const md: string[] = [
-    `# ${corpus.name}`,
-    `\`${corpus.owner}\` · ${corpus.repos.length} public repositories · ${langs.slice(0, 4).map(([l, n]) => `${l} ${n}`).join(" · ")}`,
-  ];
+  const blogHref = corpus.blog ? (corpus.blog.startsWith("http") ? corpus.blog : `https://${corpus.blog}`) : null;
+  const metaLine = [
+    corpus.location,
+    blogHref ? `[${blogHref.replace(/^https?:\/\//, "")}](${blogHref})` : null,
+  ].filter(Boolean).join(" · ");
+  const md: string[] = [`# ${corpus.name}`];
+  if (corpus.bio) md.push(`> ${corpus.bio}`);
+  md.push(`\`${corpus.owner}\` · ${corpus.repos.length} public repositories · ${langs.slice(0, 4).map(([l, n]) => `${l} ${n}`).join(" · ")}`);
+  if (metaLine) md.push(metaLine);
   if (GROUP_BY === "none") {
     md.push(corpus.repos.map(line).join("\n"));
   } else if (GROUP_BY === "language") {
