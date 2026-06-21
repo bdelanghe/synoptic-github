@@ -1,15 +1,18 @@
 #!/usr/bin/env bun
-// synoptic-github v2 — regenerate a profile README from your GitHub corpus.
-// Clean + meta-analysed: grouped by self-labeled topic (the per-repo contract),
-// with a language summary. Forks and archived repos excluded by default.
+// synoptic-github — regenerate a profile README from your GitHub corpus.
+// Pipeline: fetch → normalize → validate (Zod contract) → render (pure, deterministic).
+// Grouped by self-labeled topic; forks and archived repos excluded.
 //
 // Env:
-//   GITHUB_TOKEN  required — a token that can read your repos
-//   GROUP_BY      topic | language | none   (default: topic)
-//   OUT           output path               (default: README.md)
+//   GITHUB_TOKEN       required — reads your repos
+//   GROUP_BY           topic | language | none   (default: topic)
+//   OUT                output path               (default: README.md)
+//   SOURCE_DATE_EPOCH  source commit time (s) for a reproducible stamp (default: 0)
+//   GITHUB_SHA         commit, recorded as provenance.version
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Repo, Corpus, type Provenance } from "./schema.ts";
 
 const TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
 if (!TOKEN) { console.error("✗ set GITHUB_TOKEN"); process.exit(1); }
@@ -17,21 +20,18 @@ const GROUP_BY = (process.env.GROUP_BY || "topic").toLowerCase();
 const OUT = process.env.OUT || "README.md";
 const here = dirname(fileURLToPath(import.meta.url));
 
-type Repo = {
-  name: string; full_name: string; html_url: string; description: string | null;
-  language: string | null; topics: string[]; fork: boolean; archived: boolean;
-  private: boolean; stargazers_count: number; pushed_at: string;
-};
-
+async function gh(path: string, init?: RequestInit) {
+  const res = await fetch(`https://api.github.com${path}`, {
+    ...init,
+    headers: { Authorization: `Bearer ${TOKEN}`, Accept: "application/vnd.github+json", "User-Agent": "synoptic-github", ...(init?.headers ?? {}) },
+  });
+  if (!res.ok) throw new Error(`${path} → ${res.status} ${await res.text()}`);
+  return res.json();
+}
 async function ghAll(path: string): Promise<any[]> {
   const out: any[] = [];
   for (let page = 1; ; page++) {
-    const res = await fetch(
-      `https://api.github.com${path}${path.includes("?") ? "&" : "?"}per_page=100&page=${page}`,
-      { headers: { Authorization: `Bearer ${TOKEN}`, Accept: "application/vnd.github+json", "User-Agent": "synoptic-github" } },
-    );
-    if (!res.ok) throw new Error(`${path} → ${res.status} ${await res.text()}`);
-    const batch = (await res.json()) as any[];
+    const batch = (await gh(`${path}${path.includes("?") ? "&" : "?"}per_page=100&page=${page}`)) as any[];
     out.push(...batch);
     if (batch.length < 100) return out;
   }
@@ -40,61 +40,67 @@ async function ghAll(path: string): Promise<any[]> {
 async function langEmojis(): Promise<Record<string, string>> {
   try {
     const txt = await readFile(join(here, "action", "language_emojis.txt"), "utf8");
-    const m: Record<string, string> = {};
-    for (const line of txt.split("\n")) {
-      const i = line.indexOf(":");
-      if (i > 0) m[line.slice(0, i).trim()] = line.slice(i + 1).trim();
-    }
-    return m;
+    return Object.fromEntries(txt.split("\n").map((l) => l.split(":")).filter((p) => p.length === 2).map(([k, v]) => [k.trim(), v.trim()]));
   } catch { return {}; }
 }
 
-const user = (await (await fetch("https://api.github.com/user", {
-  headers: { Authorization: `Bearer ${TOKEN}`, "User-Agent": "synoptic-github" },
-})).json()) as { name?: string; login: string };
-
-const repos = ((await ghAll("/user/repos?affiliation=owner&visibility=public")) as Repo[])
+// ---- fetch + normalize -------------------------------------------------------
+const user = (await gh("/user")) as { name?: string; login: string };
+const raw = (await ghAll("/user/repos?affiliation=owner&visibility=public")) as any[];
+const repos = raw
   .filter((r) => !r.fork && !r.archived)
-  .sort((a, b) => b.stargazers_count - a.stargazers_count || +new Date(b.pushed_at) - +new Date(a.pushed_at));
+  .map((r) =>
+    Repo.parse({
+      name: r.name, fullName: r.full_name, url: r.html_url, description: r.description ?? null,
+      language: r.language ?? null, topics: r.topics ?? [], stars: r.stargazers_count, pushedAt: r.pushed_at,
+    }),
+  )
+  // deterministic order: stars desc, then most-recent push, then name
+  .sort((a, b) => b.stars - a.stars || (a.pushedAt < b.pushedAt ? 1 : a.pushedAt > b.pushedAt ? -1 : 0) || a.name.localeCompare(b.name));
 
+const provenance: Provenance = {
+  tool: "synoptic-github",
+  version: (process.env.GITHUB_SHA ?? "dev").slice(0, 7),
+  owner: user.login,
+  sourceEpoch: Number(process.env.SOURCE_DATE_EPOCH ?? 0) || 0,
+};
+
+// ---- validate the contract ---------------------------------------------------
+const corpus = Corpus.parse({ provenance, owner: user.login, name: user.name || user.login, repos });
+
+// ---- render (pure function of the validated corpus) --------------------------
 const emojis = await langEmojis();
-const langs = Object.entries(repos.reduce<Record<string, number>>((m, r) => {
-  if (r.language) m[r.language] = (m[r.language] || 0) + 1;
-  return m;
-}, {})).sort((a, b) => b[1] - a[1]);
+const langs = Object.entries(
+  corpus.repos.reduce<Record<string, number>>((m, r) => (r.language ? ((m[r.language] = (m[r.language] || 0) + 1), m) : m), {}),
+).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
 
 const line = (r: Repo) =>
-  `- [${r.name}](${r.html_url})` +
-  (r.description ? ` — ${r.description}` : "") +
-  (r.language ? ` \`${emojis[r.language] ?? ""}${r.language}\`` : "");
+  `- [${r.name}](${r.url})` + (r.description ? ` — ${r.description}` : "") + (r.language ? ` \`${emojis[r.language] ?? ""}${r.language}\`` : "");
 
-const sections: string[] = [];
-const title = user.name || user.login;
-sections.push(`# ${title}`);
-sections.push(`\`${user.login}\` · ${repos.length} public repositories · ${langs.slice(0, 4).map(([l, n]) => `${l} ${n}`).join(" · ")}`);
+const out: string[] = [
+  `# ${corpus.name}`,
+  `\`${corpus.owner}\` · ${corpus.repos.length} public repositories · ${langs.slice(0, 4).map(([l, n]) => `${l} ${n}`).join(" · ")}`,
+];
 
 if (GROUP_BY === "none") {
-  sections.push(repos.map(line).join("\n"));
+  out.push(corpus.repos.map(line).join("\n"));
 } else if (GROUP_BY === "language") {
   for (const [lang] of langs) {
-    const inLang = repos.filter((r) => r.language === lang);
-    if (inLang.length) sections.push(`## ${emojis[lang] ?? ""}${lang}\n\n${inLang.map(line).join("\n")}`);
+    const inLang = corpus.repos.filter((r) => r.language === lang);
+    if (inLang.length) out.push(`## ${emojis[lang] ?? ""}${lang}\n\n${inLang.map(line).join("\n")}`);
   }
 } else {
-  // group by primary (first) topic — the self-labeled contract
   const groups = new Map<string, Repo[]>();
   const other: Repo[] = [];
-  for (const r of repos) {
-    const t = r.topics?.[0];
-    if (t) (groups.get(t) ?? groups.set(t, []).get(t)!).push(r);
-    else other.push(r);
-  }
-  const ordered = [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
-  for (const [topic, rs] of ordered) sections.push(`## ${topic}\n\n${rs.map(line).join("\n")}`);
-  if (other.length) sections.push(`## other\n\n${other.map(line).join("\n")}`);
+  for (const r of corpus.repos) (r.topics[0] ? (groups.get(r.topics[0]) ?? groups.set(r.topics[0], []).get(r.topics[0])!) : other).push(r);
+  for (const [topic, rs] of [...groups].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0])))
+    out.push(`## ${topic}\n\n${rs.map(line).join("\n")}`);
+  if (other.length) out.push(`## other\n\n${other.map(line).join("\n")}`);
 }
 
-sections.push(`<sub>Generated by <a href="https://github.com/bdelanghe/synoptic-github">synoptic-github</a> — grouped by self-labeled topic.</sub>`);
+// Provenance footer — reproducible (source commit, not wall-clock).
+const stamp = corpus.provenance.sourceEpoch ? ` · ${new Date(corpus.provenance.sourceEpoch * 1000).toISOString().slice(0, 10)}` : "";
+out.push(`<sub>Generated by <a href="https://github.com/bdelanghe/synoptic-github">synoptic-github</a> @ ${corpus.provenance.version}${stamp} — grouped by self-labeled topic.</sub>`);
 
-await writeFile(OUT, sections.join("\n\n") + "\n");
-console.log(`✓ wrote ${OUT} — ${repos.length} repos, grouped by ${GROUP_BY}`);
+await writeFile(OUT, out.join("\n\n") + "\n");
+console.log(`✓ wrote ${OUT} — ${corpus.repos.length} repos, grouped by ${GROUP_BY}, stamped ${corpus.provenance.version}`);
