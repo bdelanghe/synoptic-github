@@ -38,10 +38,16 @@ async function ghAll(path: string): Promise<any[]> {
 }
 
 // ---- fetch + normalize + validate the contract (shared by all modes) ---------
-const user = (await gh("/user")) as { name?: string; login: string };
+// GH_USER (or GITHUB_REPOSITORY_OWNER) → use the PUBLIC /users/{login}/repos
+// endpoint, which works with any token incl. the Actions GITHUB_TOKEN. Without it,
+// fall back to /user (a user/PAT token) for local runs.
+// (Not USERNAME — that collides with the ambient shell/OS variable.)
+const GH_USER = process.env.GH_USER || process.env.GITHUB_REPOSITORY_OWNER;
+const user = (GH_USER ? await gh(`/users/${GH_USER}`) : await gh("/user")) as { name?: string; login: string };
 const isMeta = (r: any) => r.name === ".github" || r.name.toLowerCase() === user.login.toLowerCase();
-const repos = ((await ghAll("/user/repos?affiliation=owner&visibility=public")) as any[])
-  .filter((r) => !r.fork && !r.archived && !isMeta(r))
+const reposPath = GH_USER ? `/users/${user.login}/repos?type=owner` : "/user/repos?affiliation=owner&visibility=public";
+const repos = ((await ghAll(reposPath)) as any[])
+  .filter((r) => !r.fork && !r.archived && !r.private && !isMeta(r))
   .map((r) =>
     Repo.parse({
       name: r.name, fullName: r.full_name, url: r.html_url, description: r.description ?? null,

@@ -33,6 +33,7 @@ runs:
       run: bun "${{ github.action_path }}/synoptic.ts"
       env:
         GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
+        GH_USER: ${{ github.repository_owner }}
         GROUP_BY: ${{ inputs.group-by }}
         OUT: ${{ inputs.out }}
         GITHUB_SHA: ${{ github.sha }}
