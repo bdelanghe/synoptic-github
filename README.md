@@ -41,13 +41,26 @@ archived repos are excluded.
 | `group-by` | `topic` | `topic` · `language` · `none` |
 | `out` | `README.md` | file to write |
 
+## Modes
+
+One corpus, three modes (`bun synoptic.ts <mode>`):
+
+| Mode | Does |
+|---|---|
+| `render` (default) | corpus → clean, topic-grouped Markdown (`OUT`) |
+| `validate` | lint repos against the contract — topics must be in the vocabulary; flags missing topics/description. Exits non-zero on errors (`STRICT=1` also fails on warnings) so CI can gate it |
+| `suggest` | **deterministic** topic suggestions (keyword rules, no LLM) for untagged repos, emitted as ready `gh` commands |
+
+The contract lives in `schema.ts` (Zod blocks — `.describe` docs, `z.infer` types) and
+`vocabulary.ts` (the controlled topic list + suggestion rules). Output is reproducible:
+the provenance stamp uses `SOURCE_DATE_EPOCH`, never wall-clock, so re-runs are byte-identical.
+
 ## How it works
 
-`synoptic.ts` (Bun) fetches your public, non-fork, non-archived repos, tallies
-languages, groups by the first topic on each repo, and writes Markdown. See
-[`EXAMPLE.md`](./EXAMPLE.md) for live output from this account.
-
-Engine is plain TypeScript on Bun — no build step, no dependencies.
+`synoptic.ts` (Bun) fetches your public, non-fork, non-archived repos (excluding the
+profile and `.github` meta repos), validates them against the Zod contract, tallies
+languages, groups by the first topic, and writes Markdown. See [`EXAMPLE.md`](./EXAMPLE.md)
+for live output. Sole dependency: `zod`.
 
 ## License
 
