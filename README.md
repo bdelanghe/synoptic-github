@@ -1,36 +1,54 @@
-# 🚀 synoptic-github 🚀
+# synoptic-github
 
-🌐 **Welcome to synoptic-github!** 🌐
+Regenerate your GitHub profile README from your repositories — clean, and
+**grouped by self-labeled topic** (your repo topics are the contract). Bun engine.
 
-This template dynamically refreshes to provide a vibrant overview of all your GitHub projects right in your README! It's your one-stop-shop to give folks a snapshot of your code journey.
+One ingest, two surfaces: this drives a profile README *and* feeds a site
+(e.g. [robertdelanghe.dev](https://robertdelanghe.dev)) from the same corpus —
+related, not the same build.
 
-## 🌟 Features
+## Use it
 
-- **Automatic Updates**: Once set up, your README will update daily with a list of all your GitHub repositories.
-- **Hassle-Free**: No need to manually edit this README again. In fact, after the GitHub workflow runs for the first time, any changes to this README will be overridden.
-- **Engaging Overview**: Showcase your projects in a fun and engaging manner!
+Add a workflow to your profile repo (`<you>/<you>`):
 
-## 🚀 How to Use
+```yaml
+name: readme
+on:
+  schedule: [{ cron: "0 12 * * *" }]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  readme:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bdelanghe/synoptic-github@v2
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          group-by: topic        # topic | language | none
+```
 
-1. **Create a New Repository**: Click the "Use this template" button to get started.
-2. **Wait a Bit**: Give it some time. Once the GitHub Action runs (usually within 24 hours), your README will automatically be updated with your project list.
+Topics drive the grouping, so label your repos
+(`gh api --method PUT repos/<owner>/<repo>/topics -f 'names[]=…'`). Forks and
+archived repos are excluded.
 
-## 🔧 Customization
+## Inputs
 
-Want to customize how this works or the update frequency? Dive into the `.github/workflows/update-readme.yml` file and make it your own!
+| Input | Default | Notes |
+|---|---|---|
+| `GITHUB_TOKEN` | — | required; reads your repos |
+| `group-by` | `topic` | `topic` · `language` · `none` |
+| `out` | `README.md` | file to write |
 
-## ⚠️ Note
+## How it works
 
-Remember, after the GitHub Action updates the README for the first time, any edits you've made to the README will be overridden. So, any personalization should be done in the workflow or other files!
+`synoptic.ts` (Bun) fetches your public, non-fork, non-archived repos, tallies
+languages, groups by the first topic on each repo, and writes Markdown. See
+[`EXAMPLE.md`](./EXAMPLE.md) for live output from this account.
 
-## 🤝 Contributing
+Engine is plain TypeScript on Bun — no build step, no dependencies.
 
-Love this idea? Want to contribute? Check out our `CONTRIBUTING.md` to see how you can make this even better!
+## License
 
-## 📜 License
-
-Feel free to use, share, and remix this. For more details, see the `LICENSE` file.
-
----
-
-🎉 **Thank you for stopping by!** Your coding journey just got a bit more vibrant. Happy coding! 🎉
+See `LICENSE`.

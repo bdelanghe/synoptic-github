@@ -1,14 +1,22 @@
-name: Update My README
+name: demo
 
+# Live demo of this action against this account — writes EXAMPLE.md so the repo's
+# own README (the docs) is preserved. In a profile repo you'd target README.md.
 on:
   schedule:
-    - cron: '0 12 * * *'
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
-  update-readme:
+  demo:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: bdelanghe/synoptic-github/action@v1
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: ./
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          group-by: topic
+          out: EXAMPLE.md

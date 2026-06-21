@@ -1,11 +1,43 @@
 name: 'Synoptic GitHub'
-description: 'Update the README with a list of user repositories.'
+description: 'Regenerate a profile README from your GitHub repositories, grouped by self-labeled topic. Bun.'
+branding:
+  icon: 'grid'
+  color: 'green'
 inputs:
   GITHUB_TOKEN:
-    description: 'GitHub token'
+    description: 'A token that can read your repositories.'
     required: true
+  group-by:
+    description: 'topic | language | none'
+    required: false
+    default: 'topic'
+  out:
+    description: 'Output file to write.'
+    required: false
+    default: 'README.md'
 runs:
   using: 'composite'
   steps:
-    - run: ${{ github.action_path }}/action/entrypoint.sh
+    - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      with:
+        bun-version: latest
+    - name: Generate
       shell: bash
+      run: bun "${{ github.action_path }}/synoptic.ts"
+      env:
+        GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
+        GROUP_BY: ${{ inputs.group-by }}
+        OUT: ${{ inputs.out }}
+    - name: Commit if changed
+      shell: bash
+      run: |
+        out="${{ inputs.out }}"
+        if ! git diff --quiet -- "$out"; then
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$out"
+          git commit -m "chore: refresh $out (synoptic)"
+          git push
+        else
+          echo "no change"
+        fi
