@@ -109,40 +109,38 @@ if (MODE === "validate") {
   }
   console.log(`suggest: ${n} untagged repo(s) with suggestions`);
 } else if (MODE === "render") {
-  const emojis = await (async () => {
-    try {
-      const txt = await readFile(join(here, "action", "language_emojis.txt"), "utf8");
-      return Object.fromEntries(txt.split("\n").map((l) => l.split(":")).filter((p) => p.length === 2).map(([k, v]) => [k.trim(), v.trim()]));
-    } catch { return {} as Record<string, string>; }
-  })();
+  // FILTER="topicA,topicB" → query the corpus: only repos carrying one of these topics.
+  const FILTER = (process.env.FILTER || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const shown = FILTER.length ? corpus.repos.filter((r) => r.topics.some((t) => FILTER.includes(t))) : corpus.repos;
+
   const langs = Object.entries(
-    corpus.repos.reduce<Record<string, number>>((m, r) => (r.language ? ((m[r.language] = (m[r.language] || 0) + 1), m) : m), {}),
+    shown.reduce<Record<string, number>>((m, r) => (r.language ? ((m[r.language] = (m[r.language] || 0) + 1), m) : m), {}),
   ).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
 
   const line = (r: Repo) =>
-    `- [${r.name}](${r.url})` + (r.description ? ` — ${r.description}` : "") + (r.language ? ` \`${emojis[r.language] ?? ""}${r.language}\`` : "");
+    `- [${r.name}](${r.url})` + (r.description ? ` — ${r.description}` : "") + (r.language ? ` \`${r.language}\`` : "");
 
   const blogHref = corpus.blog ? (corpus.blog.startsWith("http") ? corpus.blog : `https://${corpus.blog}`) : null;
   const ghUser = (h: string) => `[${h}](https://github.com/${h.replace(/^@/, "")})`;
   const linksLine = [
-    corpus.location ? `📍 ${corpus.location}` : null,
-    blogHref ? `🔗 [${blogHref.replace(/^https?:\/\//, "")}](${blogHref})` : null,
-    corpus.company ? `🏢 ${corpus.company.startsWith("@") ? ghUser(corpus.company) : corpus.company}` : null,
-    corpus.twitter ? `🐦 [@${corpus.twitter}](https://x.com/${corpus.twitter})` : null,
+    corpus.location,
+    blogHref ? `[${blogHref.replace(/^https?:\/\//, "")}](${blogHref})` : null,
+    corpus.company ? (corpus.company.startsWith("@") ? ghUser(corpus.company) : corpus.company) : null,
+    corpus.twitter ? `[@${corpus.twitter}](https://x.com/${corpus.twitter})` : null,
   ].filter(Boolean).join(" · ");
   const statsLine =
-    `\`${corpus.owner}\` · ${corpus.repos.length} public repositories · ` +
-    langs.slice(0, 4).map(([l, n]) => `${emojis[l] ?? ""}${l} ${n}`).join(" · ");
+    `\`${corpus.owner}\` · ${shown.length} public repositories · ` +
+    langs.slice(0, 4).map(([l, n]) => `${l} ${n}`).join(" · ");
 
   // Graphics: BANNER=path/prefix → a theme-aware <picture> (…-dark.svg / …-light.svg) at the top.
   const BANNER = process.env.BANNER?.trim();
-  // Curated highlights: FEATURED="repoA,repoB" → a ⭐ Featured section, in that order, pulled out of the groups.
+  // Curated highlights: FEATURED="repoA,repoB" → a Featured section, in that order, pulled out of the groups.
   const featuredNames = (process.env.FEATURED || "").split(",").map((s) => s.trim()).filter(Boolean);
   const featured = featuredNames
-    .map((n) => corpus.repos.find((r) => r.name === n))
+    .map((n) => shown.find((r) => r.name === n))
     .filter((r): r is Repo => !!r);
   const featuredSet = new Set(featured.map((r) => r.name));
-  const rest = corpus.repos.filter((r) => !featuredSet.has(r.name));
+  const rest = shown.filter((r) => !featuredSet.has(r.name));
 
   const md: string[] = [];
   if (BANNER) {
@@ -157,14 +155,14 @@ if (MODE === "validate") {
   if (corpus.bio) md.push(`**${corpus.bio}**`);
   if (linksLine) md.push(linksLine);
   md.push(statsLine);
-  if (featured.length) md.push(`## ⭐ Featured\n\n${featured.map(line).join("\n")}`);
+  if (featured.length) md.push(`## Featured\n\n${featured.map(line).join("\n")}`);
 
   if (GROUP_BY === "none") {
     md.push(rest.map(line).join("\n"));
   } else if (GROUP_BY === "language") {
     for (const [lang] of langs) {
       const inLang = rest.filter((r) => r.language === lang);
-      if (inLang.length) md.push(`## ${emojis[lang] ?? ""}${lang}\n\n${inLang.map(line).join("\n")}`);
+      if (inLang.length) md.push(`## ${lang}\n\n${inLang.map(line).join("\n")}`);
     }
   } else {
     const groups = new Map<string, Repo[]>();
@@ -178,7 +176,7 @@ if (MODE === "validate") {
   md.push(`<sub>auto-updated${stampDate ? ` ${stampDate}` : ""}</sub>`);
 
   await writeFile(OUT, md.join("\n\n") + "\n");
-  console.log(`✓ wrote ${OUT} — ${corpus.repos.length} repos, grouped by ${GROUP_BY}, stamped ${corpus.provenance.version}`);
+  console.log(`✓ wrote ${OUT} — ${shown.length}/${corpus.repos.length} repos, grouped by ${GROUP_BY}, stamped ${corpus.provenance.version}`);
 } else {
   console.error(`✗ unknown mode '${MODE}' (use: render | validate | suggest)`);
   process.exit(2);

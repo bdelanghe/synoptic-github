@@ -24,7 +24,11 @@ inputs:
     required: false
     default: ''
   featured:
-    description: 'Comma-separated repo names to highlight in a ⭐ Featured section (in order); pulled out of the topic groups.'
+    description: 'Comma-separated repo names to highlight in a Featured section (in order); pulled out of the topic groups.'
+    required: false
+    default: ''
+  filter:
+    description: 'Comma-separated topics to query: only repos carrying one of these topics are shown. Empty = all.'
     required: false
     default: ''
 runs:
@@ -51,6 +55,7 @@ runs:
         OUT: ${{ inputs.out }}
         BANNER: ${{ inputs.banner }}
         FEATURED: ${{ inputs.featured }}
+        FILTER: ${{ inputs.filter }}
         GITHUB_SHA: ${{ github.sha }}
     - name: Commit if changed
       shell: bash
