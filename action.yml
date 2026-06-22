@@ -31,6 +31,14 @@ inputs:
     description: 'Comma-separated topics to query: only repos carrying one of these topics are shown. Empty = all.'
     required: false
     default: ''
+  inject-into:
+    description: 'Region-injection: file to inject the grouped list into (between <!-- MARKER:start/end -->), preserving the rest. Overrides full-render.'
+    required: false
+    default: ''
+  marker:
+    description: 'Marker name for region-injection.'
+    required: false
+    default: 'synoptic'
 runs:
   using: 'composite'
   steps:
@@ -56,16 +64,17 @@ runs:
         BANNER: ${{ inputs.banner }}
         FEATURED: ${{ inputs.featured }}
         FILTER: ${{ inputs.filter }}
+        INJECT_INTO: ${{ inputs.inject-into }}
+        MARKER: ${{ inputs.marker }}
         GITHUB_SHA: ${{ github.sha }}
     - name: Commit if changed
       shell: bash
       run: |
-        out="${{ inputs.out }}"
-        if ! git diff --quiet -- "$out"; then
+        if ! git diff --quiet; then
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "$out"
-          git commit -m "chore: refresh $out (synoptic)"
+          git add -A
+          git commit -m "chore: refresh repositories (synoptic)"
           git push
         else
           echo "no change"

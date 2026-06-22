@@ -142,41 +142,56 @@ if (MODE === "validate") {
   const featuredSet = new Set(featured.map((r) => r.name));
   const rest = shown.filter((r) => !featuredSet.has(r.name));
 
-  const md: string[] = [];
-  if (BANNER) {
-    md.push(
-      `<picture>\n` +
-        `  <source media="(prefers-color-scheme: dark)" srcset="${BANNER}-dark.svg">\n` +
-        `  <img alt="${corpus.name} — ${corpus.bio ?? corpus.owner}" src="${BANNER}-light.svg" width="100%">\n` +
-        `</picture>`,
-    );
-  }
-  md.push(`# ${corpus.name}`);
-  if (corpus.bio) md.push(`**${corpus.bio}**`);
-  if (linksLine) md.push(linksLine);
-  md.push(statsLine);
-  if (featured.length) md.push(`## Featured\n\n${featured.map(line).join("\n")}`);
-
+  // Group blocks (shared by full render + region-injection).
+  const groupBlocks: string[] = [];
   if (GROUP_BY === "none") {
-    md.push(rest.map(line).join("\n"));
+    groupBlocks.push(rest.map(line).join("\n"));
   } else if (GROUP_BY === "language") {
     for (const [lang] of langs) {
       const inLang = rest.filter((r) => r.language === lang);
-      if (inLang.length) md.push(`## ${lang}\n\n${inLang.map(line).join("\n")}`);
+      if (inLang.length) groupBlocks.push(`## ${lang}\n\n${inLang.map(line).join("\n")}`);
     }
   } else {
     const groups = new Map<string, Repo[]>();
     const other: Repo[] = [];
     for (const r of rest) (r.topics[0] ? (groups.get(r.topics[0]) ?? groups.set(r.topics[0], []).get(r.topics[0])!) : other).push(r);
     for (const [topic, rs] of [...groups].sort((a, b) => pri(a[0]) - pri(b[0]) || b[1].length - a[1].length || a[0].localeCompare(b[0])))
-      md.push(`## ${topic}\n\n${rs.map(line).join("\n")}`);
-    if (other.length) md.push(`## other\n\n${other.map(line).join("\n")}`);
+      groupBlocks.push(`## ${topic}\n\n${rs.map(line).join("\n")}`);
+    if (other.length) groupBlocks.push(`## other\n\n${other.map(line).join("\n")}`);
   }
   const stampDate = corpus.provenance.sourceEpoch ? new Date(corpus.provenance.sourceEpoch * 1000).toISOString().slice(0, 10) : "";
-  md.push(`<sub>auto-updated${stampDate ? ` ${stampDate}` : ""}</sub>`);
 
-  await writeFile(OUT, md.join("\n\n") + "\n");
-  console.log(`✓ wrote ${OUT} — ${shown.length}/${corpus.repos.length} repos, grouped by ${GROUP_BY}, stamped ${corpus.provenance.version}`);
+  const injectInto = process.env.INJECT_INTO;
+  if (injectInto) {
+    // Region-injection: replace ONLY the marked block, preserving the handcrafted file.
+    const marker = process.env.MARKER || "synoptic";
+    const start = `<!-- ${marker}:start -->`, end = `<!-- ${marker}:end -->`;
+    const block = `${start}\n<details>\n<summary><b>All public repositories</b> — grouped by topic${stampDate ? ` · auto-updated ${stampDate}` : ""}</summary>\n\n${groupBlocks.join("\n\n")}\n\n</details>\n${end}`;
+    const file = await readFile(injectInto, "utf8");
+    const re = new RegExp(`${start}[\\s\\S]*?${end}`);
+    if (!re.test(file)) { console.error(`✗ markers not found in ${injectInto}: ${start} … ${end}`); process.exit(1); }
+    await writeFile(injectInto, file.replace(re, block));
+    console.log(`✓ injected ${shown.length} repos into ${injectInto} between '${marker}' markers`);
+  } else {
+    const md: string[] = [];
+    if (BANNER) {
+      md.push(
+        `<picture>\n` +
+          `  <source media="(prefers-color-scheme: dark)" srcset="${BANNER}-dark.svg">\n` +
+          `  <img alt="${corpus.name} — ${corpus.bio ?? corpus.owner}" src="${BANNER}-light.svg" width="100%">\n` +
+          `</picture>`,
+      );
+    }
+    md.push(`# ${corpus.name}`);
+    if (corpus.bio) md.push(`**${corpus.bio}**`);
+    if (linksLine) md.push(linksLine);
+    md.push(statsLine);
+    if (featured.length) md.push(`## Featured\n\n${featured.map(line).join("\n")}`);
+    md.push(...groupBlocks);
+    md.push(`<sub>auto-updated${stampDate ? ` ${stampDate}` : ""}</sub>`);
+    await writeFile(OUT, md.join("\n\n") + "\n");
+    console.log(`✓ wrote ${OUT} — ${shown.length}/${corpus.repos.length} repos, grouped by ${GROUP_BY}, stamped ${corpus.provenance.version}`);
+  }
 } else {
   console.error(`✗ unknown mode '${MODE}' (use: render | validate | suggest)`);
   process.exit(2);
