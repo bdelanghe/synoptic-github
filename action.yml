@@ -11,6 +11,10 @@ inputs:
     description: 'topic | language | none'
     required: false
     default: 'topic'
+  orgs:
+    description: 'Comma-separated orgs whose public repos to include (e.g. bounded-systems)'
+    required: false
+    default: ''
   out:
     description: 'Output file to write.'
     required: false
@@ -34,6 +38,7 @@ runs:
       env:
         GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
         GH_USER: ${{ github.repository_owner }}
+        ORGS: ${{ inputs.orgs }}
         GROUP_BY: ${{ inputs.group-by }}
         OUT: ${{ inputs.out }}
         GITHUB_SHA: ${{ github.sha }}
