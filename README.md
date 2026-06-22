@@ -39,6 +39,8 @@ archived repos are excluded.
 |---|---|---|
 | `GITHUB_TOKEN` | — | required; reads your repos |
 | `group-by` | `topic` | `topic` · `language` · `none` |
+| `thesis` | — | one-paragraph bet (plain language) → lead blockquote under the bio |
+| `read-first` | — | `Label \| https://url` (or just a URL) → a prominent **Start here** funnel line |
 | `out` | `README.md` | file to write |
 
 ## Modes

@@ -132,6 +132,19 @@ if (MODE === "validate") {
     `\`${corpus.owner}\` · ${shown.length} public repositories · ` +
     langs.slice(0, 4).map(([l, n]) => `${l} ${n}`).join(" · ");
 
+  // Funnel (thesis → proof path). The skimmer gets the bet, then one click to "read this first".
+  // THESIS=one paragraph (the bet, plain language) → a lead blockquote under the bio.
+  const THESIS = process.env.THESIS?.trim();
+  // READ_FIRST="Label | https://url" (or just a URL) → a prominent start-here line.
+  const readFirstRaw = process.env.READ_FIRST?.trim();
+  const readFirst = (() => {
+    if (!readFirstRaw) return null;
+    const [a, b] = readFirstRaw.split("|").map((s) => s.trim());
+    const url = b ?? a;
+    const label = b ? a : url.replace(/^https?:\/\//, "");
+    return `**Start here — [${label}](${url})**`;
+  })();
+
   // Graphics: BANNER=path/prefix → a theme-aware <picture> (…-dark.svg / …-light.svg) at the top.
   const BANNER = process.env.BANNER?.trim();
   // Curated highlights: FEATURED="repoA,repoB" → a Featured section, in that order, pulled out of the groups.
@@ -184,6 +197,8 @@ if (MODE === "validate") {
     }
     md.push(`# ${corpus.name}`);
     if (corpus.bio) md.push(`**${corpus.bio}**`);
+    if (THESIS) md.push(THESIS.split("\n").map((l) => `> ${l}`).join("\n"));
+    if (readFirst) md.push(readFirst);
     if (linksLine) md.push(linksLine);
     md.push(statsLine);
     if (featured.length) md.push(`## Featured\n\n${featured.map(line).join("\n")}`);
