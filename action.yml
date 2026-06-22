@@ -19,6 +19,14 @@ inputs:
     description: 'Output file to write.'
     required: false
     default: 'README.md'
+  banner:
+    description: 'Path prefix for a theme-aware SVG banner; emits <picture> with <prefix>-dark.svg / <prefix>-light.svg. Empty = no banner.'
+    required: false
+    default: ''
+  featured:
+    description: 'Comma-separated repo names to highlight in a ⭐ Featured section (in order); pulled out of the topic groups.'
+    required: false
+    default: ''
 runs:
   using: 'composite'
   steps:
@@ -41,6 +49,8 @@ runs:
         ORGS: ${{ inputs.orgs }}
         GROUP_BY: ${{ inputs.group-by }}
         OUT: ${{ inputs.out }}
+        BANNER: ${{ inputs.banner }}
+        FEATURED: ${{ inputs.featured }}
         GITHUB_SHA: ${{ github.sha }}
     - name: Commit if changed
       shell: bash
