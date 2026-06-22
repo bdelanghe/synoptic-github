@@ -53,6 +53,7 @@ async function ghAll(path: string): Promise<any[]> {
 const GH_USER = process.env.GH_USER || process.env.GITHUB_REPOSITORY_OWNER;
 const user = (GH_USER ? await gh(`/users/${GH_USER}`) : await gh("/user")) as {
   name?: string; login: string; bio?: string | null; blog?: string | null; location?: string | null;
+  company?: string | null; twitter_username?: string | null;
 };
 const isMeta = (r: any) => r.name === ".github" || r.name.toLowerCase() === user.login.toLowerCase();
 const reposPath = GH_USER ? `/users/${user.login}/repos?type=owner` : "/user/repos?affiliation=owner&visibility=public";
@@ -79,7 +80,8 @@ const provenance: Provenance = {
 };
 const corpus = Corpus.parse({
   provenance, owner: user.login, name: user.name || user.login,
-  bio: user.bio ?? null, blog: user.blog || null, location: user.location ?? null, repos,
+  bio: user.bio ?? null, blog: user.blog || null, location: user.location ?? null,
+  company: user.company ?? null, twitter: user.twitter_username ?? null, repos,
 });
 
 // ---- modes -------------------------------------------------------------------
@@ -121,25 +123,53 @@ if (MODE === "validate") {
     `- [${r.name}](${r.url})` + (r.description ? ` — ${r.description}` : "") + (r.language ? ` \`${emojis[r.language] ?? ""}${r.language}\`` : "");
 
   const blogHref = corpus.blog ? (corpus.blog.startsWith("http") ? corpus.blog : `https://${corpus.blog}`) : null;
-  const metaLine = [
-    corpus.location,
-    blogHref ? `[${blogHref.replace(/^https?:\/\//, "")}](${blogHref})` : null,
+  const ghUser = (h: string) => `[${h}](https://github.com/${h.replace(/^@/, "")})`;
+  const linksLine = [
+    corpus.location ? `📍 ${corpus.location}` : null,
+    blogHref ? `🔗 [${blogHref.replace(/^https?:\/\//, "")}](${blogHref})` : null,
+    corpus.company ? `🏢 ${corpus.company.startsWith("@") ? ghUser(corpus.company) : corpus.company}` : null,
+    corpus.twitter ? `🐦 [@${corpus.twitter}](https://x.com/${corpus.twitter})` : null,
   ].filter(Boolean).join(" · ");
-  const md: string[] = [`# ${corpus.name}`];
-  if (corpus.bio) md.push(`> ${corpus.bio}`);
-  md.push(`\`${corpus.owner}\` · ${corpus.repos.length} public repositories · ${langs.slice(0, 4).map(([l, n]) => `${l} ${n}`).join(" · ")}`);
-  if (metaLine) md.push(metaLine);
+  const statsLine =
+    `\`${corpus.owner}\` · ${corpus.repos.length} public repositories · ` +
+    langs.slice(0, 4).map(([l, n]) => `${emojis[l] ?? ""}${l} ${n}`).join(" · ");
+
+  // Graphics: BANNER=path/prefix → a theme-aware <picture> (…-dark.svg / …-light.svg) at the top.
+  const BANNER = process.env.BANNER?.trim();
+  // Curated highlights: FEATURED="repoA,repoB" → a ⭐ Featured section, in that order, pulled out of the groups.
+  const featuredNames = (process.env.FEATURED || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const featured = featuredNames
+    .map((n) => corpus.repos.find((r) => r.name === n))
+    .filter((r): r is Repo => !!r);
+  const featuredSet = new Set(featured.map((r) => r.name));
+  const rest = corpus.repos.filter((r) => !featuredSet.has(r.name));
+
+  const md: string[] = [];
+  if (BANNER) {
+    md.push(
+      `<picture>\n` +
+        `  <source media="(prefers-color-scheme: dark)" srcset="${BANNER}-dark.svg">\n` +
+        `  <img alt="${corpus.name} — ${corpus.bio ?? corpus.owner}" src="${BANNER}-light.svg" width="100%">\n` +
+        `</picture>`,
+    );
+  }
+  md.push(`# ${corpus.name}`);
+  if (corpus.bio) md.push(`**${corpus.bio}**`);
+  if (linksLine) md.push(linksLine);
+  md.push(statsLine);
+  if (featured.length) md.push(`## ⭐ Featured\n\n${featured.map(line).join("\n")}`);
+
   if (GROUP_BY === "none") {
-    md.push(corpus.repos.map(line).join("\n"));
+    md.push(rest.map(line).join("\n"));
   } else if (GROUP_BY === "language") {
     for (const [lang] of langs) {
-      const inLang = corpus.repos.filter((r) => r.language === lang);
+      const inLang = rest.filter((r) => r.language === lang);
       if (inLang.length) md.push(`## ${emojis[lang] ?? ""}${lang}\n\n${inLang.map(line).join("\n")}`);
     }
   } else {
     const groups = new Map<string, Repo[]>();
     const other: Repo[] = [];
-    for (const r of corpus.repos) (r.topics[0] ? (groups.get(r.topics[0]) ?? groups.set(r.topics[0], []).get(r.topics[0])!) : other).push(r);
+    for (const r of rest) (r.topics[0] ? (groups.get(r.topics[0]) ?? groups.set(r.topics[0], []).get(r.topics[0])!) : other).push(r);
     for (const [topic, rs] of [...groups].sort((a, b) => pri(a[0]) - pri(b[0]) || b[1].length - a[1].length || a[0].localeCompare(b[0])))
       md.push(`## ${topic}\n\n${rs.map(line).join("\n")}`);
     if (other.length) md.push(`## other\n\n${other.map(line).join("\n")}`);
