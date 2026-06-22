@@ -128,9 +128,21 @@ if (MODE === "validate") {
     corpus.company ? (corpus.company.startsWith("@") ? ghUser(corpus.company) : corpus.company) : null,
     corpus.twitter ? `[@${corpus.twitter}](https://x.com/${corpus.twitter})` : null,
   ].filter(Boolean).join(" · ");
-  const statsLine =
-    `\`${corpus.owner}\` · ${shown.length} public repositories · ` +
-    langs.slice(0, 4).map(([l, n]) => `${l} ${n}`).join(" · ");
+  // Signal, all computed from the corpus (no external stat cards): total stars and
+  // recently-active count. Recency is measured against sourceEpoch — the commit time,
+  // never wall-clock — so re-runs stay byte-identical. Empty segments drop out.
+  const totalStars = shown.reduce((s, r) => s + r.stars, 0);
+  const NINETY_DAYS = 90 * 24 * 3600;
+  const activeRecently = corpus.provenance.sourceEpoch
+    ? shown.filter((r) => corpus.provenance.sourceEpoch - Math.floor(Date.parse(r.pushedAt) / 1000) <= NINETY_DAYS).length
+    : 0;
+  const statsLine = [
+    `\`${corpus.owner}\``,
+    `${shown.length} public repositories`,
+    ...(totalStars > 0 ? [`${totalStars} stars`] : []),
+    ...(activeRecently > 0 ? [`${activeRecently} active in 90d`] : []),
+    ...langs.slice(0, 4).map(([l, n]) => `${l} ${n}`),
+  ].join(" · ");
 
   // Graphics: BANNER=path/prefix → a theme-aware <picture> (…-dark.svg / …-light.svg) at the top.
   const BANNER = process.env.BANNER?.trim();
