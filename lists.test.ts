@@ -1,6 +1,7 @@
 // Tests for the pure triage layer of lists.mjs. No network/gh.
 import { test, expect } from "bun:test";
-import { DEFAULT_CONFIG, ageYears, lowSignal, listFor, proposeLists, exportMarkdown } from "./lists.mjs";
+import { DEFAULT_CONFIG, ageYears, lowSignal, listFor, proposeLists, thesisScore, classify, exportJsonl } from "./lists.mjs";
+import { starHistogram } from "./value.mjs";
 
 const cfg = DEFAULT_CONFIG;
 const NOW = Date.parse("2026-06-22T00:00:00Z");
@@ -89,20 +90,44 @@ test("proposeLists is deterministic", () => {
   expect(proposeLists(stars, cfg, NOW)).toEqual(proposeLists(stars, cfg, NOW));
 });
 
-// ---- exportMarkdown ----------------------------------------------------------
-test("exportMarkdown writes every star into sections (pinned + lists + dropped), with links/stars", () => {
+// ---- thesisScore / classify / exportJsonl ------------------------------------
+const betHist = starHistogram([
+  ...Array(6).fill({ topics: ["capability-security"], language: "TypeScript" }),
+  ...Array(4).fill({ topics: ["developer-tools"], language: "TypeScript" }),
+]);
+
+test("thesisScore: keyword hits and topic-alignment to the bet both raise the score", () => {
+  const onTopic = thesisScore(star({ nameWithOwner: "o/x", topics: ["capability-security"] }), betHist, cfg.betKeywords);
+  const onKeyword = thesisScore(star({ nameWithOwner: "o/agent-thing", description: "an mcp agent harness" }), betHist, cfg.betKeywords);
+  const off = thesisScore(star({ nameWithOwner: "o/plain", topics: ["cooking"], description: "recipes" }), betHist, cfg.betKeywords);
+  expect(onTopic.align).toBeGreaterThan(0);
+  expect(onKeyword.kw).toBeGreaterThanOrEqual(2);
+  expect(off.score).toBe(0);
+});
+
+test("classify keeps on-thesis stars and drops the rest; sorted keep-first by score", () => {
   const stars = [
-    ...many("ai", 8, { description: "an ai thing", language: "Python" }),
-    star({ nameWithOwner: "big/landmark", topics: ["ai"], stars: 9000, description: "huge", language: "Go" }),
-    star({ nameWithOwner: "o/dead", isArchived: true }),
+    star({ nameWithOwner: "ok/agent", description: "claude agent skill", topics: ["ai"], stars: 5 }),
+    star({ nameWithOwner: "ok/cap", topics: ["capability-security"], description: "ocap", stars: 3 }),
+    star({ nameWithOwner: "no/recipes", topics: ["cooking"], description: "food", stars: 99 }),
   ];
-  const plan = proposeLists(stars, cfg, NOW);
-  const md = exportMarkdown(plan, "2026-06-23");
-  expect(md).toContain("# Starred archive — 10 repos");
-  expect(md).toContain("## pinned-stars");
-  expect(md).toContain("## ai (");
-  expect(md).toContain("## dropped (1)");
-  expect(md).toContain("[big/landmark](https://github.com/big/landmark) — huge `Go` ★9000");
-  // every kept + dropped repo is represented (count link bullets)
-  expect((md.match(/^- \[/gm) || []).length).toBe(plan.kept.length + plan.unstar.length + plan.pinned.length);
+  const out = classify(stars, betHist, cfg, NOW);
+  const keep = out.filter((r) => r.disposition === "keep").map((r) => r.repo);
+  const drop = out.filter((r) => r.disposition === "drop").map((r) => r.repo);
+  expect(keep).toContain("ok/agent");
+  expect(keep).toContain("ok/cap");
+  expect(drop).toEqual(["no/recipes"]);          // popular but off-thesis → dropped
+  expect(out[0].disposition).toBe("keep");        // keep sorted first
+  expect(out.every((r) => r.url.startsWith("https://github.com/"))).toBe(true);
+});
+
+test("exportJsonl emits one parseable JSON record per line, every field present", () => {
+  const records = classify([star({ nameWithOwner: "o/agent", description: "mcp agent", topics: ["ai"] })], betHist, cfg, NOW);
+  const lines = exportJsonl(records).trim().split("\n");
+  expect(lines.length).toBe(records.length);
+  const obj = JSON.parse(lines[0]);
+  expect(obj).toHaveProperty("repo");
+  expect(obj).toHaveProperty("disposition");
+  expect(obj).toHaveProperty("cluster");
+  expect(obj).toHaveProperty("thesis");
 });
