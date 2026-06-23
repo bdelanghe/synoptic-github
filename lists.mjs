@@ -88,6 +88,7 @@ const loadConfig = (dir) => {
   } catch { return DEFAULT_CONFIG; }
 };
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const graphql = async (query, vars = {}) => {
   const args = ["api", "graphql", "-f", `query=${query}`];
   for (const [k, v] of Object.entries(vars)) args.push("-F", `${k}=${v}`);
@@ -130,15 +131,60 @@ const fetchStars = async () => {
   return out;
 };
 
-const LISTS_Q = `{ viewer { lists(first: 100) { nodes { name slug isPrivate items(first: 1) { totalCount } } } } }`;
+const LISTS_Q = `{ viewer { lists(first: 100) { nodes { id name slug isPrivate items(first: 1) { totalCount } } } } }`;
+
+// --- mutations (only fire under --apply --yes). IDs are GitHub node ids, inlined because
+// gh api can't pass GraphQL list-typed ($listIds: [ID!]) variables cleanly; values are
+// JSON.stringify'd so a stray quote can't break out. ---
+const createList = (label) =>
+  graphql(`mutation { createUserList(input: {name: ${JSON.stringify(label)}, description: "Filed by lists.mjs", isPrivate: false}) { list { id name } } }`);
+const fileItem = (repoId, listId) =>
+  graphql(`mutation { updateUserListsForItem(input: {itemId: ${JSON.stringify(repoId)}, listIds: [${JSON.stringify(listId)}]}) { clientMutationId } }`);
+const unstarItem = (repoId) =>
+  graphql(`mutation { removeStar(input: {starrableId: ${JSON.stringify(repoId)}}) { clientMutationId } }`);
+
+// Execute the plan: ensure each target list exists (reuse by case-insensitive name), file
+// its repos. Unstarring is destructive and stays opt-in (--unstar). --only/--limit scope it.
+const applyPlan = async (plan, existing, opts) => {
+  const byName = new Map(existing.map((l) => [l.name.toLowerCase(), l.id]));
+  let lists = plan.lists.filter((l) => l.label !== "misc"); // don't auto-create a junk drawer
+  if (opts.only) { const set = new Set(opts.only.toLowerCase().split(",").map((s) => s.trim())); lists = lists.filter((l) => set.has(l.label.toLowerCase())); }
+  if (!lists.length) { console.error(`✗ no proposed list to apply${opts.only ? ` for --only ${opts.only}` : ""}`); return; }
+
+  let created = 0, filed = 0;
+  for (const l of lists) {
+    let id = byName.get(l.label.toLowerCase());
+    if (!id) {
+      id = (await createList(l.label))?.data?.createUserList?.list?.id;
+      if (!id) { console.error(`  ✗ could not create list '${l.label}'`); continue; }
+      byName.set(l.label.toLowerCase(), id); created++;
+      console.log(`  + created list '${l.label}'`);
+    }
+    const items = opts.limit ? l.items.slice(0, opts.limit) : l.items;
+    for (const r of items) { (await fileItem(r.id, id))?.data ? filed++ : console.error(`  ✗ file ${r.nameWithOwner}`); await sleep(180); } // throttle: dodge secondary rate limits
+    console.log(`  → filed ${items.length} into '${l.label}'`);
+  }
+
+  let unstarred = 0;
+  if (opts.unstar) {
+    const cull = opts.limit ? plan.unstar.slice(0, opts.limit) : plan.unstar;
+    for (const r of cull) { if ((await unstarItem(r.id))?.data) unstarred++; await sleep(180); }
+    console.log(`  − unstarred ${unstarred}`);
+  }
+  console.log(`\n  applied: ${created} list(s) created · ${filed} repo(s) filed${opts.unstar ? ` · ${unstarred} unstarred` : " · unstar skipped (pass --unstar)"}\n`);
+};
 
 const main = async () => {
   const dir = dirname(fileURLToPath(import.meta.url));
   const cfg = loadConfig(dir);
   const nowMs = Date.now();
+  const argVal = (n) => { const i = process.argv.indexOf(n); return i >= 0 ? process.argv[i + 1] : null; };
   const asJson = process.argv.includes("--json");
   const apply = process.argv.includes("--apply");
   const yes = process.argv.includes("--yes");
+  const only = argVal("--only");
+  const doUnstar = process.argv.includes("--unstar");
+  const limit = Number(argVal("--limit")) || 0;
 
   const stars = await fetchStars();
   if (!stars.length) { console.error("✗ no public stars found (is `gh` authenticated?)"); process.exit(1); }
@@ -174,8 +220,12 @@ const main = async () => {
   if (plan.unstar.length > 12) console.log(`  … and ${plan.unstar.length - 12} more`);
 
   console.log(`\n  After triage: every kept star filed into a list, ${plan.unstar.length} unstarred → inbox 0.`);
-  if (apply && !yes) console.log(`\n  --apply needs --yes to mutate your account (creates ${plan.lists.length} lists, files ${plan.kept.length}, unstars ${plan.unstar.length}). Dry-run only.`);
-  else if (apply && yes) console.log(`\n  (apply path is implemented but intentionally not auto-run in this build — wire up applyPlan() when ready.)`);
+  if (apply && !yes) {
+    console.log(`\n  --apply needs --yes to mutate your account (creates ~${plan.lists.length} lists, files ${plan.kept.length}). Dry-run only.`);
+  } else if (apply && yes) {
+    console.log(`\n  APPLYING${only ? ` (--only ${only})` : ""}${limit ? ` (--limit ${limit})` : ""}${doUnstar ? " +unstar" : ""} …`);
+    await applyPlan(plan, existing, { only, unstar: doUnstar, limit });
+  }
   console.log("");
 };
 
