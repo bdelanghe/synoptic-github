@@ -1,0 +1,43 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  container:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: DeterminateSystems/nix-installer-action@da36cb69b1c3247ad7a1f931ebfd954a1105ef14 # v14
+      - uses: DeterminateSystems/magic-nix-cache-action@87b14cf437d03d37989d87f0fa5ce4f5dc1a330b # v8
+      - name: Build container image
+        run: nix build .#container
+      - name: Push to GHCR
+        run: |
+          VERSION=${GITHUB_REF_NAME}
+          MAJOR=$(echo "$VERSION" | sed 's/v\([0-9]*\).*/\1/')
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          docker load < result
+          docker tag ghcr.io/bdelanghe/synoptic-github:latest ghcr.io/bdelanghe/synoptic-github:${VERSION}
+          docker tag ghcr.io/bdelanghe/synoptic-github:latest ghcr.io/bdelanghe/synoptic-github:${MAJOR}
+          docker push ghcr.io/bdelanghe/synoptic-github:latest
+          docker push ghcr.io/bdelanghe/synoptic-github:${VERSION}
+          docker push ghcr.io/bdelanghe/synoptic-github:${MAJOR}
+
+  jsr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: latest
+      - name: Publish to JSR
+        run: bunx jsr publish

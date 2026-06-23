@@ -1,8 +1,7 @@
 {
   "name": "synoptic-github",
   "version": "2.0.0",
-  "private": true,
-  "type": "module",
+"type": "module",
   "description": "Regenerate a profile README from your GitHub repositories, grouped by self-labeled topic. Bun + Zod.",
   "scripts": {
     "test": "bun test"
