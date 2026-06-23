@@ -88,6 +88,13 @@
           # container we run as root — git refuses unless we mark it safe.
           ${pkgs.git}/bin/git config --global --add safe.directory '*'
           export SOURCE_DATE_EPOCH=$(${pkgs.git}/bin/git log -1 --format=%ct)
+          # Hydrate bare env names from INPUT_* when the Docker action env: passthrough
+          # does not propagate them (observed with comma-separated values like FEATURED).
+          : "''${FEATURED:=''${INPUT_FEATURED:-}}"
+          : "''${FILTER:=''${INPUT_FILTER:-}}"
+          : "''${BANNER:=''${INPUT_BANNER:-}}"
+          : "''${THESIS:=''${INPUT_THESIS:-}}"
+          export FEATURED FILTER BANNER THESIS
           ${synoptic}/bin/synoptic-github "$@"
           if ! ${pkgs.git}/bin/git diff --quiet; then
             ${pkgs.git}/bin/git config user.name "github-actions[bot]"
