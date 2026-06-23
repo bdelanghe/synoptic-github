@@ -17,6 +17,9 @@ import { fileURLToPath } from "node:url";
 const MS_PER_MONTH = 1000 * 60 * 60 * 24 * 30.4;
 export const monthsOld = (d, nowMs) => (nowMs - Date.parse(d)) / MS_PER_MONTH;
 
+const STALE_MONTHS = 12;    // gates `move` and thin+stale review
+const ANCIENT_MONTHS = 48;  // 4yr untouched + has a description → surface for review
+
 // active personal config / identity — always keep
 const KEEP = /dotfile|home-?manager|nix-darwin|chezmoi|yadm|^bdelanghe$|^site$|claude-skills/i;
 // Featured on the profile README (mirror the `featured:` input in
@@ -44,7 +47,7 @@ export const disposition = (r, nowMs) => {
   const blob = `${r.name} ${r.description || ""} ${topics.join(" ")}`.toLowerCase();
   const text = `${r.name} ${r.description || ""}`.toLowerCase(); // MISSION reads name+desc only, never topics
   const age = monthsOld(r.pushedAt, nowMs);
-  const stale = age > 12;
+  const stale = age > STALE_MONTHS;
   const thin = !r.description;
   // A mission match must not override clear abandonment: a dead (stale) or
   // throwaway repo is never promoted into the org. Topics count only via the
@@ -55,8 +58,9 @@ export const disposition = (r, nowMs) => {
   if (KEEP.test(r.name)) { d = "keep"; why = "active config / identity"; }
   else if (FEATURED.has(r.name)) { d = "keep"; why = "featured on profile README"; }
   else if (onMission) { d = "move"; why = "on-mission signal"; }
-  else if (THROWAWAY_NAME.test(r.name) || THROWAWAY_DESC.test(r.description || "") || topics.includes("game") || topics.includes("learning")) { d = "archive"; why = "learning / throwaway / done"; }
+  else if (THROWAWAY_NAME.test(r.name) || THROWAWAY_DESC.test(r.description || "") || topics.includes("game") || topics.includes("learning") || topics.includes("experiment")) { d = "archive"; why = "learning / throwaway / experiment / done"; }
   else if (thin && stale) { d = "review"; why = `no description, ${Math.round(age)}mo stale`; }
+  else if (age > ANCIENT_MONTHS) { d = "review"; why = `${Math.round(age)}mo untouched — keep or archive?`; }
   else { d = "keep"; why = "has a stated purpose"; }
   return { name: r.name, d, why, age: Math.round(age), desc: (r.description || "—").slice(0, 64) };
 };

@@ -76,6 +76,27 @@ test("thin + stale → review", () => {
   expect(d({ description: "", pushedAt: ago(20) })).toBe("review");
 });
 
+test("experiment-tagged repo → archive (explicit self-label)", () => {
+  expect(d({ name: "lean-to", description: "tiny vite project", pushedAt: ago(8),
+    repositoryTopics: topics("experiment") })).toBe("archive");
+});
+
+test("very ancient repo with a description → review, not silent keep", () => {
+  // anagram-dict / Kaleida / scrabble-hooks: 5yr untouched but have descriptions,
+  // so thin+stale doesn't catch them — surface for a human instead of keep.
+  const r = disposition(repo({ name: "anagram-dict", description: "anagram dictionary", pushedAt: ago(65) }), NOW);
+  expect(r.d).toBe("review");
+  expect(r.why).toContain("untouched");
+});
+
+test("ancient config/identity still keeps (KEEP wins over age)", () => {
+  expect(d({ name: "yadm", description: "dotfile manager", pushedAt: ago(39) })).toBe("keep");
+});
+
+test("a fresh repo with a description is not flagged by the ancient rule", () => {
+  expect(d({ description: "a useful tool", pushedAt: ago(3) })).toBe("keep");
+});
+
 test("personal-domain veto blocks move even on a mission keyword", () => {
   // 'kaggle' (personal) present → never move, even with thesis phrasing
   expect(d({ name: "imdb-kaggle", description: "capability security experiment", pushedAt: ago(1) })).not.toBe("move");
