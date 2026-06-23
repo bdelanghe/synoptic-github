@@ -2,6 +2,7 @@
 // synoptic.ts owns IO (fetch/env/read/write); everything here is a deterministic
 // function of its inputs, so it is unit-testable in isolation (see render.test.ts).
 import type { Corpus, Repo } from "./schema.ts";
+import { languageSlug } from "./languages.ts";
 
 // Lead with the strongest categories; experiments/games sink to the bottom.
 export const TOPIC_PRIORITY = [
@@ -86,7 +87,7 @@ const groupBlocksFor = (rest: Repo[], groupBy: string, langs: [string, number][]
   } else if (groupBy === "language") {
     for (const [lang] of langs) {
       const inLang = rest.filter((r) => r.language === lang);
-      if (inLang.length) blocks.push(`## ${lang}\n\n${inLang.map(repoLine).join("\n")}`);
+      if (inLang.length) blocks.push(`## [${lang}](https://github.com/trending/${languageSlug(lang)})\n\n${inLang.map(repoLine).join("\n")}`);
     }
   } else {
     const groups = new Map<string, Repo[]>();

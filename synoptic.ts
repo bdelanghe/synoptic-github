@@ -13,6 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Repo, Corpus, type Provenance } from "./schema.ts";
 import { TOPICS, suggestTopics } from "./vocabulary.ts";
+import { LANGUAGE_NAMES } from "./languages.ts";
 import { renderProfile, injectionBlock, replaceMarkedRegion, filterRepos, type RenderOptions } from "./render.ts";
 
 const TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
@@ -86,6 +87,7 @@ if (MODE === "validate") {
     if (unknown.length) { console.error(`✗ ${r.fullName}: topics not in vocabulary: ${unknown.join(", ")}`); errors++; }
     if (r.topics.length === 0) { console.warn(`⚠ ${r.fullName}: no topics`); warns++; }
     if (!r.description) { console.warn(`⚠ ${r.fullName}: no description`); warns++; }
+    if (r.language && !LANGUAGE_NAMES.has(r.language)) { console.warn(`⚠ ${r.fullName}: language not in ontology: ${r.language}`); warns++; }
   }
   const strict = process.env.STRICT === "1";
   console.log(`validate: ${corpus.repos.length} repos · ${errors} error(s) · ${warns} warning(s)${strict ? " · STRICT" : ""}`);
