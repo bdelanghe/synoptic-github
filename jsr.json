@@ -1,6 +1,6 @@
 {
   "name": "@bdelanghe/synoptic-github",
-  "version": "2.0.0",
+  "version": "2.1.7",
   "exports": {
     ".": "./schema.ts",
     "./render": "./render.ts",

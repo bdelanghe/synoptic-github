@@ -7,6 +7,28 @@ One ingest, two surfaces: this drives a profile README *and* feeds a site
 (e.g. [robertdelanghe.dev](https://robertdelanghe.dev)) from the same corpus —
 related, not the same build.
 
+## Install
+
+**GitHub Action** (profile repo workflow — see below)
+
+**JSR module** (import the schema/render layer):
+```ts
+import { Corpus, Repo } from "jsr:@bdelanghe/synoptic-github";
+import { renderProfile } from "jsr:@bdelanghe/synoptic-github/render";
+```
+
+**Nix** (devShell, compiled binary, or OCI container):
+```bash
+nix develop github:bdelanghe/synoptic-github   # devShell with bun + git
+nix build   github:bdelanghe/synoptic-github#synoptic    # compiled binary
+nix build   github:bdelanghe/synoptic-github#container   # OCI image
+```
+
+**Container** (pre-built, same image the action uses):
+```
+ghcr.io/bdelanghe/synoptic-github:latest
+```
+
 ## Use it
 
 Add a workflow to your profile repo (`<you>/<you>`):
