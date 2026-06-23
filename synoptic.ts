@@ -128,9 +128,32 @@ if (MODE === "validate") {
     corpus.company ? (corpus.company.startsWith("@") ? ghUser(corpus.company) : corpus.company) : null,
     corpus.twitter ? `[@${corpus.twitter}](https://x.com/${corpus.twitter})` : null,
   ].filter(Boolean).join(" · ");
-  const statsLine =
-    `\`${corpus.owner}\` · ${shown.length} public repositories · ` +
-    langs.slice(0, 4).map(([l, n]) => `${l} ${n}`).join(" · ");
+  // Signal, all computed from the corpus (no external stat cards): total stars,
+  // recently-active count, and org-vs-personal split. Recency is measured against
+  // sourceEpoch — the commit time, never wall-clock — so re-runs stay byte-identical.
+  // Every segment is gated, so it drops out when it carries no signal.
+  const totalStars = shown.reduce((s, r) => s + r.stars, 0);
+  const NINETY_DAYS = 90 * 24 * 3600;
+  const activeRecently = corpus.provenance.sourceEpoch
+    ? shown.filter((r) => corpus.provenance.sourceEpoch - Math.floor(Date.parse(r.pushedAt) / 1000) <= NINETY_DAYS).length
+    : 0;
+  // Org contribution: count repos owned by someone other than the profile owner,
+  // tallied per org so "12 @bounded-systems" reads as real org work, not solo toys.
+  const orgCounts = Object.entries(
+    shown.reduce<Record<string, number>>((m, r) => {
+      const owner = r.fullName.split("/")[0];
+      if (owner.toLowerCase() !== corpus.owner.toLowerCase()) m[owner] = (m[owner] || 0) + 1;
+      return m;
+    }, {}),
+  ).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const statsLine = [
+    `\`${corpus.owner}\``,
+    `${shown.length} public repositories`,
+    ...orgCounts.map(([o, n]) => `${n} @${o}`),
+    ...(totalStars > 0 ? [`${totalStars} stars`] : []),
+    ...(activeRecently > 0 ? [`${activeRecently} active in 90d`] : []),
+    ...langs.slice(0, 4).map(([l, n]) => `${l} ${n}`),
+  ].join(" · ");
 
   // Graphics: BANNER=path/prefix → a theme-aware <picture> (…-dark.svg / …-light.svg) at the top.
   const BANNER = process.env.BANNER?.trim();
