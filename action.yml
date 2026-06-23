@@ -52,7 +52,6 @@ runs:
   image: docker://ghcr.io/bdelanghe/synoptic-github:latest
   env:
     GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
-    GH_USER: ${{ github.repository_owner }}
     ORGS: ${{ inputs.orgs }}
     GROUP_BY: ${{ inputs.group-by }}
     OUT: ${{ inputs.out }}
@@ -63,4 +62,3 @@ runs:
     FILTER: ${{ inputs.filter }}
     INJECT_INTO: ${{ inputs.inject-into }}
     MARKER: ${{ inputs.marker }}
-    GITHUB_SHA: ${{ github.sha }}
