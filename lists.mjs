@@ -15,6 +15,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { alignmentScore, starHistogram, DEFAULT_CONFIG as VALUE_CFG } from "./value.mjs";
 const pexec = promisify(execFile);
 
 export const DEFAULT_CONFIG = {
@@ -22,6 +23,10 @@ export const DEFAULT_CONFIG = {
   maxLists: 20,         // cap the number of lists (keep it navigable); the rest → misc
   pinnedCount: 25,      // size of the high-signal "pinned" list
   staleYears: 5,        // an untagged, undescribed repo older than this is unstar-bait
+  // Thesis keep-filter: a star stays starred only if it signals the bet (what you build).
+  betKeywords: ["agent", "agentic", "mcp", "claude", "llm", "skill", "ocap", "capabilit",
+    "provenance", "attestation", "slsa", "sandbox", "spec-driven", "spec-kit", "codex", "subagent", "harness"],
+  thesisKeepAlign: 0.5, // alignment ≥ this (vs your own repo topics) also keeps a star
 };
 
 const YEAR_MS = 365.25 * 24 * 60 * 60 * 1000;
@@ -79,28 +84,40 @@ export const proposeLists = (stars, cfg, nowMs) => {
   return { lists, pinned, unstar, kept, topicFreq };
 };
 
-// Full markdown archive of every star, grouped by list — the persistent record so the
-// live GitHub stars can be pruned to a targeted set without losing the organization.
-// (A GitHub List can't exist without stars; markdown can.)
-const repoMd = (r) =>
-  `- [${r.nameWithOwner}](https://github.com/${r.nameWithOwner})` +
-  (r.description ? ` — ${r.description}` : "") + (r.language ? ` \`${r.language}\`` : "") + (r.stars ? ` ★${r.stars}` : "");
-
-export const exportMarkdown = (plan, dateStr) => {
-  const total = plan.kept.length + plan.unstar.length;
-  const out = [
-    `# Starred archive — ${total} repos`,
-    `<sub>exported ${dateStr} by lists.mjs · the full record; live GitHub stars get pruned to a targeted set</sub>`,
-    "",
-    `## pinned-stars (${plan.pinned.length}) — kept starred`,
-    "",
-    ...plan.pinned.map(repoMd),
-    "",
-  ];
-  for (const l of plan.lists) out.push(`## ${l.label} (${l.items.length})`, "", ...l.items.map(repoMd), "");
-  if (plan.unstar.length) out.push(`## dropped (${plan.unstar.length}) — archived, will be unstarred`, "", ...plan.unstar.map(repoMd), "");
-  return out.join("\n") + "\n";
+// Thesis score: alignment of a star's topics/language to what YOU build (betHist) plus
+// keyword hits in its name/description. Reuses value.mjs's alignment, so stars are scored
+// the same way as your own repos — the bet is "does this signal what I build?".
+export const thesisScore = (repo, betHist, keywords) => {
+  const align = alignmentScore(repo, betHist, VALUE_CFG);
+  const hay = `${repo.nameWithOwner} ${repo.description ?? ""}`.toLowerCase();
+  const kw = keywords.filter((k) => hay.includes(k)).length;
+  return { score: align + 0.5 * kw, align, kw };
 };
+
+// Disposition every star: keep (on-thesis → stays starred) or drop (archive → unstar).
+// `cluster` is the topical bucket (from proposeLists), independent of keep/drop.
+export const classify = (stars, betHist, cfg, nowMs) => {
+  const plan = proposeLists(stars, cfg, nowMs);
+  const cluster = new Map();
+  for (const l of plan.lists) for (const r of l.items) cluster.set(r.nameWithOwner, l.label);
+  for (const r of plan.unstar) cluster.set(r.nameWithOwner, "low-signal");
+  return stars
+    .map((r) => {
+      const t = thesisScore(r, betHist, cfg.betKeywords);
+      const keep = t.kw > 0 || t.align >= cfg.thesisKeepAlign;
+      return {
+        repo: r.nameWithOwner, id: r.id, url: `https://github.com/${r.nameWithOwner}`,
+        stars: r.stars, language: r.language, topics: r.topics, description: r.description,
+        cluster: cluster.get(r.nameWithOwner) ?? "misc",
+        thesis: Number(t.score.toFixed(3)), disposition: keep ? "keep" : "drop",
+      };
+    })
+    .sort((a, b) => (a.disposition === b.disposition ? b.thesis - a.thesis : a.disposition === "keep" ? -1 : 1));
+};
+
+// NDJSON archive: one record per star. The persistent record (a GitHub List needs stars; a
+// file doesn't), so live stars can be pruned to the keep-set without losing anything.
+export const exportJsonl = (records) => records.map((r) => JSON.stringify(r)).join("\n") + "\n";
 
 // ---- IO (runs only when invoked directly) -----------------------------------
 
@@ -150,6 +167,20 @@ const fetchStars = async () => {
     }
     if (!conn.pageInfo.hasNextPage) break;
     after = conn.pageInfo.endCursor;
+  }
+  return out;
+};
+
+// The "bet" = what you build: your own + ORGS public, non-fork repo topics/languages.
+const fetchOwnTopics = async (user) => {
+  const orgs = (process.env.ORGS || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const fields = "repositoryTopics,primaryLanguage,visibility";
+  const out = [];
+  for (const owner of [user, ...orgs]) {
+    try {
+      const repos = JSON.parse((await pexec("gh", ["repo", "list", owner, "--no-archived", "--source", "--visibility", "public", "--limit", "300", "--json", fields], { encoding: "utf8", maxBuffer: 64e6 })).stdout);
+      for (const r of repos) out.push({ topics: (r.repositoryTopics || []).map((t) => t.name), language: r.primaryLanguage?.name ?? null });
+    } catch {}
   }
   return out;
 };
@@ -215,10 +246,29 @@ const main = async () => {
 
   const plan = proposeLists(stars, cfg, nowMs);
 
+  // --export <file>: thesis-classify every star and write the JSONL archive (keep/drop).
+  // --prune <file>:  unstar the disposition:"drop" repos listed in an existing archive —
+  //   archive-driven, so the record is guaranteed saved first. Throttled + capped.
   const exportFile = argVal("--export");
-  if (exportFile) {
-    writeFileSync(exportFile, exportMarkdown(plan, new Date(nowMs).toISOString().slice(0, 10)));
-    console.log(`✓ archived ${stars.length} stars → ${exportFile} (${plan.lists.length} sections + ${plan.pinned.length} pinned + ${plan.unstar.length} dropped)`);
+  const pruneFile = argVal("--prune");
+  if (exportFile || pruneFile) {
+    if (exportFile) {
+      const betHist = starHistogram(await fetchOwnTopics(user));
+      const records = classify(stars, betHist, cfg, nowMs);
+      const keep = records.filter((r) => r.disposition === "keep").length;
+      writeFileSync(exportFile, exportJsonl(records));
+      console.log(`✓ archived ${records.length} stars → ${exportFile} · keep ${keep} · drop ${records.length - keep}`);
+    }
+    if (pruneFile) {
+      const archived = readFileSync(pruneFile, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+      const drops = archived.filter((r) => r.disposition === "drop" && r.id);
+      const cap = limit || drops.length;
+      if (!(apply && yes)) { console.log(`  --prune: would unstar ${drops.length} drop(s) from ${pruneFile}. Add --apply --yes (and --limit N to cap a run).`); return; }
+      console.log(`  PRUNING ${Math.min(cap, drops.length)} of ${drops.length} drops (throttled ~1.3s/call) …`);
+      let n = 0;
+      for (const r of drops.slice(0, cap)) { if ((await unstarItem(r.id))?.data) n++; await sleep(1300); }
+      console.log(`  − unstarred ${n}${drops.length > cap ? ` · ${drops.length - cap} remain (re-run to continue)` : ""}`);
+    }
     return;
   }
 
