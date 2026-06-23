@@ -2,5 +2,6 @@ node_modules/
 .DS_Store
 .value-cache.json
 stars-prune.jsonl
+follows.jsonl
 result
 result-*

@@ -39,6 +39,12 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: latest
+      - name: Set version from tag
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          jq --arg v "$VERSION" '.version = $v' jsr.json     > jsr.json.tmp     && mv jsr.json.tmp jsr.json
+          jq --arg v "$VERSION" '.version = $v' package.json > package.json.tmp && mv package.json.tmp package.json
+          echo "Publishing version $VERSION"
       - name: Install deps
         run: bun install --frozen-lockfile
       - name: Publish to JSR
