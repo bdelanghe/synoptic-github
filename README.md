@@ -59,8 +59,14 @@ the provenance stamp uses `SOURCE_DATE_EPOCH`, never wall-clock, so re-runs are 
 
 `synoptic.ts` (Bun) fetches your public, non-fork, non-archived repos (excluding the
 profile and `.github` meta repos), validates them against the Zod contract, tallies
-languages, groups by the first topic, and writes Markdown. See [`EXAMPLE.md`](./EXAMPLE.md)
-for live output. Sole dependency: `zod`.
+languages, totals stars, counts recently-active repos (measured against `SOURCE_DATE_EPOCH`,
+never wall-clock, so the count stays reproducible) and org-vs-personal repos, groups by the
+first topic, and writes Markdown. See [`EXAMPLE.md`](./EXAMPLE.md) for live output. Sole
+dependency: `zod`.
+
+`synoptic.ts` owns the IO (fetch, env, read/write); all the Markdown assembly lives in
+`render.ts` as pure, side-effect-free functions of the corpus, covered by `render.test.ts`
+(`bun test`).
 
 ## Curation & value (advisory)
 
