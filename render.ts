@@ -156,10 +156,11 @@ export const renderProfile = (corpus: Corpus, opts: RenderOptions): string => {
 
 // The marked region for region-injection: a collapsible block of the grouped repos.
 export const injectionBlock = (corpus: Corpus, opts: RenderOptions, marker: string): string => {
-  const { groupBlocks } = view(corpus, opts);
+  const { featured, groupBlocks } = view(corpus, opts);
   const stamp = stampDate(corpus.provenance.sourceEpoch);
   const start = `<!-- ${marker}:start -->`, end = `<!-- ${marker}:end -->`;
-  return `${start}\n<details>\n<summary><b>All public repositories</b> — grouped by topic${stamp ? ` · auto-updated ${stamp}` : ""}</summary>\n\n${groupBlocks.join("\n\n")}\n\n</details>\n${end}`;
+  const featuredSection = featured.length ? `## Featured\n\n${featured.map(repoLine).join("\n")}\n\n` : "";
+  return `${start}\n${featuredSection}<details>\n<summary><b>All public repositories</b> — grouped by topic${stamp ? ` · auto-updated ${stamp}` : ""}</summary>\n\n${groupBlocks.join("\n\n")}\n\n</details>\n${end}`;
 };
 
 // Replace ONLY the marked region in `file`, preserving the rest. null = markers absent.
