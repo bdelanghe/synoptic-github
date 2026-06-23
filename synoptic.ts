@@ -13,6 +13,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Repo, Corpus, type Provenance } from "./schema.ts";
 import { TOPICS, suggestTopics } from "./vocabulary.ts";
+import { LANGUAGE_NAMES } from "./languages.ts";
+import { renderProfile, injectionBlock, replaceMarkedRegion, filterRepos, type RenderOptions } from "./render.ts";
 
 const TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
 if (!TOKEN) { console.error("✗ set GITHUB_TOKEN"); process.exit(1); }
@@ -20,14 +22,6 @@ const MODE = (process.argv[2] || process.env.MODE || "render").toLowerCase();
 const GROUP_BY = (process.env.GROUP_BY || "topic").toLowerCase();
 const OUT = process.env.OUT || "README.md";
 const here = dirname(fileURLToPath(import.meta.url));
-
-// Lead with the strongest categories; experiments/games sink to the bottom.
-const TOPIC_PRIORITY = [
-  "capability-security", "agent-infra", "ai", "developer-tools", "library", "cli",
-  "infrastructure", "nix", "state-machines", "design-tokens", "data-viz", "web",
-  "algorithms", "game", "learning", "experiment",
-];
-const pri = (t: string) => (TOPIC_PRIORITY.indexOf(t) === -1 ? 999 : TOPIC_PRIORITY.indexOf(t));
 
 async function gh(path: string) {
   const res = await fetch(`https://api.github.com${path}`, {
@@ -93,6 +87,7 @@ if (MODE === "validate") {
     if (unknown.length) { console.error(`✗ ${r.fullName}: topics not in vocabulary: ${unknown.join(", ")}`); errors++; }
     if (r.topics.length === 0) { console.warn(`⚠ ${r.fullName}: no topics`); warns++; }
     if (!r.description) { console.warn(`⚠ ${r.fullName}: no description`); warns++; }
+    if (r.language && !LANGUAGE_NAMES.has(r.language)) { console.warn(`⚠ ${r.fullName}: language not in ontology: ${r.language}`); warns++; }
   }
   const strict = process.env.STRICT === "1";
   console.log(`validate: ${corpus.repos.length} repos · ${errors} error(s) · ${warns} warning(s)${strict ? " · STRICT" : ""}`);
@@ -109,111 +104,31 @@ if (MODE === "validate") {
   }
   console.log(`suggest: ${n} untagged repo(s) with suggestions`);
 } else if (MODE === "render") {
-  // FILTER="topicA,topicB" → query the corpus: only repos carrying one of these topics.
-  const FILTER = (process.env.FILTER || "").split(",").map((s) => s.trim()).filter(Boolean);
-  const shown = FILTER.length ? corpus.repos.filter((r) => r.topics.some((t) => FILTER.includes(t))) : corpus.repos;
-
-  const langs = Object.entries(
-    shown.reduce<Record<string, number>>((m, r) => (r.language ? ((m[r.language] = (m[r.language] || 0) + 1), m) : m), {}),
-  ).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-
-  const line = (r: Repo) =>
-    `- [${r.name}](${r.url})` + (r.description ? ` — ${r.description}` : "") + (r.language ? ` \`${r.language}\`` : "");
-
-  const blogHref = corpus.blog ? (corpus.blog.startsWith("http") ? corpus.blog : `https://${corpus.blog}`) : null;
-  const ghUser = (h: string) => `[${h}](https://github.com/${h.replace(/^@/, "")})`;
-  const linksLine = [
-    corpus.location,
-    blogHref ? `[${blogHref.replace(/^https?:\/\//, "")}](${blogHref})` : null,
-    corpus.company ? (corpus.company.startsWith("@") ? ghUser(corpus.company) : corpus.company) : null,
-    corpus.twitter ? `[@${corpus.twitter}](https://x.com/${corpus.twitter})` : null,
-  ].filter(Boolean).join(" · ");
-  // Signal, all computed from the corpus (no external stat cards): total stars,
-  // recently-active count, and org-vs-personal split. Recency is measured against
-  // sourceEpoch — the commit time, never wall-clock — so re-runs stay byte-identical.
-  // Every segment is gated, so it drops out when it carries no signal.
-  const totalStars = shown.reduce((s, r) => s + r.stars, 0);
-  const NINETY_DAYS = 90 * 24 * 3600;
-  const activeRecently = corpus.provenance.sourceEpoch
-    ? shown.filter((r) => corpus.provenance.sourceEpoch - Math.floor(Date.parse(r.pushedAt) / 1000) <= NINETY_DAYS).length
-    : 0;
-  // Org contribution: count repos owned by someone other than the profile owner,
-  // tallied per org so "12 @bounded-systems" reads as real org work, not solo toys.
-  const orgCounts = Object.entries(
-    shown.reduce<Record<string, number>>((m, r) => {
-      const owner = r.fullName.split("/")[0];
-      if (owner.toLowerCase() !== corpus.owner.toLowerCase()) m[owner] = (m[owner] || 0) + 1;
-      return m;
-    }, {}),
-  ).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  const statsLine = [
-    `\`${corpus.owner}\``,
-    `${shown.length} public repositories`,
-    ...orgCounts.map(([o, n]) => `${n} @${o}`),
-    ...(totalStars > 0 ? [`${totalStars} stars`] : []),
-    ...(activeRecently > 0 ? [`${activeRecently} active in 90d`] : []),
-    ...langs.slice(0, 4).map(([l, n]) => `${l} ${n}`),
-  ].join(" · ");
-
-  // Graphics: BANNER=path/prefix → a theme-aware <picture> (…-dark.svg / …-light.svg) at the top.
-  const BANNER = process.env.BANNER?.trim();
-  // Curated highlights: FEATURED="repoA,repoB" → a Featured section, in that order, pulled out of the groups.
-  const featuredNames = (process.env.FEATURED || "").split(",").map((s) => s.trim()).filter(Boolean);
-  const featured = featuredNames
-    .map((n) => shown.find((r) => r.name === n))
-    .filter((r): r is Repo => !!r);
-  const featuredSet = new Set(featured.map((r) => r.name));
-  const rest = shown.filter((r) => !featuredSet.has(r.name));
-
-  // Group blocks (shared by full render + region-injection).
-  const groupBlocks: string[] = [];
-  if (GROUP_BY === "none") {
-    groupBlocks.push(rest.map(line).join("\n"));
-  } else if (GROUP_BY === "language") {
-    for (const [lang] of langs) {
-      const inLang = rest.filter((r) => r.language === lang);
-      if (inLang.length) groupBlocks.push(`## ${lang}\n\n${inLang.map(line).join("\n")}`);
-    }
-  } else {
-    const groups = new Map<string, Repo[]>();
-    const other: Repo[] = [];
-    for (const r of rest) (r.topics[0] ? (groups.get(r.topics[0]) ?? groups.set(r.topics[0], []).get(r.topics[0])!) : other).push(r);
-    for (const [topic, rs] of [...groups].sort((a, b) => pri(a[0]) - pri(b[0]) || b[1].length - a[1].length || a[0].localeCompare(b[0])))
-      groupBlocks.push(`## ${topic}\n\n${rs.map(line).join("\n")}`);
-    if (other.length) groupBlocks.push(`## other\n\n${other.map(line).join("\n")}`);
-  }
-  const stampDate = corpus.provenance.sourceEpoch ? new Date(corpus.provenance.sourceEpoch * 1000).toISOString().slice(0, 10) : "";
+  // Render is a pure function of the corpus + options (see render.ts); this mode just
+  // gathers env → options and owns the IO (write, or region-inject into an existing file).
+  const opts: RenderOptions = {
+    groupBy: GROUP_BY,
+    filter: (process.env.FILTER || "").split(",").map((s) => s.trim()).filter(Boolean),
+    banner: process.env.BANNER?.trim() || null,
+    featured: (process.env.FEATURED || "").split(",").map((s) => s.trim()).filter(Boolean),
+  };
+  const shownCount = filterRepos(corpus.repos, opts.filter).length;
 
   const injectInto = process.env.INJECT_INTO;
   if (injectInto) {
-    // Region-injection: replace ONLY the marked block, preserving the handcrafted file.
     const marker = process.env.MARKER || "synoptic";
-    const start = `<!-- ${marker}:start -->`, end = `<!-- ${marker}:end -->`;
-    const block = `${start}\n<details>\n<summary><b>All public repositories</b> — grouped by topic${stampDate ? ` · auto-updated ${stampDate}` : ""}</summary>\n\n${groupBlocks.join("\n\n")}\n\n</details>\n${end}`;
+    const block = injectionBlock(corpus, opts, marker);
     const file = await readFile(injectInto, "utf8");
-    const re = new RegExp(`${start}[\\s\\S]*?${end}`);
-    if (!re.test(file)) { console.error(`✗ markers not found in ${injectInto}: ${start} … ${end}`); process.exit(1); }
-    await writeFile(injectInto, file.replace(re, block));
-    console.log(`✓ injected ${shown.length} repos into ${injectInto} between '${marker}' markers`);
-  } else {
-    const md: string[] = [];
-    if (BANNER) {
-      md.push(
-        `<picture>\n` +
-          `  <source media="(prefers-color-scheme: dark)" srcset="${BANNER}-dark.svg">\n` +
-          `  <img alt="${corpus.name} — ${corpus.bio ?? corpus.owner}" src="${BANNER}-light.svg" width="100%">\n` +
-          `</picture>`,
-      );
+    const replaced = replaceMarkedRegion(file, marker, block);
+    if (replaced === null) {
+      console.error(`✗ markers not found in ${injectInto}: <!-- ${marker}:start --> … <!-- ${marker}:end -->`);
+      process.exit(1);
     }
-    md.push(`# ${corpus.name}`);
-    if (corpus.bio) md.push(`**${corpus.bio}**`);
-    if (linksLine) md.push(linksLine);
-    md.push(statsLine);
-    if (featured.length) md.push(`## Featured\n\n${featured.map(line).join("\n")}`);
-    md.push(...groupBlocks);
-    md.push(`<sub>auto-updated${stampDate ? ` ${stampDate}` : ""}</sub>`);
-    await writeFile(OUT, md.join("\n\n") + "\n");
-    console.log(`✓ wrote ${OUT} — ${shown.length}/${corpus.repos.length} repos, grouped by ${GROUP_BY}, stamped ${corpus.provenance.version}`);
+    await writeFile(injectInto, replaced);
+    console.log(`✓ injected ${shownCount} repos into ${injectInto} between '${marker}' markers`);
+  } else {
+    await writeFile(OUT, renderProfile(corpus, opts));
+    console.log(`✓ wrote ${OUT} — ${shownCount}/${corpus.repos.length} repos, grouped by ${GROUP_BY}, stamped ${corpus.provenance.version}`);
   }
 } else {
   console.error(`✗ unknown mode '${MODE}' (use: render | validate | suggest)`);

@@ -64,6 +64,10 @@ never wall-clock, so the count stays reproducible) and org-vs-personal repos, gr
 first topic, and writes Markdown. See [`EXAMPLE.md`](./EXAMPLE.md) for live output. Sole
 dependency: `zod`.
 
+`synoptic.ts` owns the IO (fetch, env, read/write); all the Markdown assembly lives in
+`render.ts` as pure, side-effect-free functions of the corpus, covered by `render.test.ts`
+(`bun test`).
+
 ## License
 
 See `LICENSE`.
