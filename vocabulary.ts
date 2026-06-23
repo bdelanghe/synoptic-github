@@ -5,7 +5,7 @@ import type { Repo } from "./schema.ts";
 
 /** Allowed topics. Repos may only carry these; `validate` flags anything else. */
 export const TOPICS = [
-  "agent-infra", "capability-security", "developer-tools", "cli", "library",
+  "agent-infra", "ai-agents", "capability-security", "security", "developer-tools", "cli", "library",
   "github-actions", "nix", "devcontainers", "design-tokens", "state-machines",
   "web", "data-viz", "ai", "game", "algorithms", "learning", "experiment", "infrastructure",
 ] as const;
