@@ -251,6 +251,23 @@ const main = async () => {
   const refresh = process.argv.includes("--refresh");
   const cache = refresh ? {} : loadCache(dir, nowMs);
   const misses = toPrice.filter((t) => !cache[t]);
+
+  // Pre-flight: check the search bucket before burning quota (mirrors github-budget's
+  // gateGhArgv pattern — gate before spend, not after a 403). One core-bucket call.
+  if (misses.length > 0) {
+    const rl = await ghJson(["api", "rate_limit"]);
+    const sb = rl?.resources?.search;
+    if (sb) {
+      const resetInMin = Math.ceil((sb.reset * 1000 - nowMs) / 60_000);
+      if (sb.remaining < 5) {
+        console.error(`✗ search budget exhausted (${sb.remaining}/${sb.limit}) — resets in ${resetInMin}m. Re-run after the window or use cached data.`);
+        process.exit(1);
+      }
+      if (sb.remaining < misses.length + 10)
+        console.error(`⚠ search budget tight: ${sb.remaining}/${sb.limit} remaining, need ${misses.length} — resets in ${resetInMin}m`);
+    }
+  }
+
   const fetched = await pool(misses, 3, fetchTopicMarket);
   misses.forEach((t, i) => { if (fetched[i]) cache[t] = { ...fetched[i], ts: nowMs }; });
   saveCache(dir, cache);
