@@ -3,7 +3,7 @@
 import { test, expect } from "bun:test";
 import type { Corpus, Repo } from "./schema.ts";
 import {
-  repoLine, languageTally, statsLine, linksLine, stampDate, filterRepos,
+  repoLine, languageTally, statsLine, linksLine, stampDate, filterRepos, funnelReadFirst,
   renderProfile, injectionBlock, replaceMarkedRegion,
 } from "./render.ts";
 
@@ -94,7 +94,29 @@ test("filterRepos keeps repos carrying a listed topic; empty filter = all", () =
   expect(filterRepos(repos, undefined).map((r) => r.name)).toEqual(["a", "b"]);
 });
 
+// ---- funnelReadFirst ---------------------------------------------------------
+test("funnelReadFirst: 'Label | url' → labelled start-here; bare url derives label; empty → null", () => {
+  expect(funnelReadFirst("Read this | https://x.io/post")).toBe("**Start here — [Read this](https://x.io/post)**");
+  expect(funnelReadFirst("https://x.io/post")).toBe("**Start here — [x.io/post](https://x.io/post)**");
+  expect(funnelReadFirst("")).toBeNull();
+  expect(funnelReadFirst(null)).toBeNull();
+  expect(funnelReadFirst(undefined)).toBeNull();
+});
+
 // ---- renderProfile -----------------------------------------------------------
+test("renderProfile: thesis renders as a blockquote and funnel as a Start-here line, under the bio", () => {
+  const c = corpus([repo({ name: "a", topics: ["ai"] })], { bio: "the bio" });
+  const md = renderProfile(c, { groupBy: "topic", thesis: "my bet\nsecond line", readFirst: "Read | https://x.io" });
+  expect(md).toContain("**the bio**\n\n> my bet\n> second line\n\n**Start here — [Read](https://x.io)**");
+});
+
+test("renderProfile: no thesis/funnel by default (no stray blockquote / Start here)", () => {
+  const md = renderProfile(corpus([repo({ name: "a", topics: ["ai"] })]), { groupBy: "topic" });
+  expect(md).not.toContain("Start here");
+  expect(md).not.toContain("\n> ");
+});
+
+
 test("renderProfile: topic groups ordered by priority, Featured pulled out, stamp present", () => {
   const c = corpus([
     repo({ name: "exp", topics: ["experiment"], language: "Go" }),

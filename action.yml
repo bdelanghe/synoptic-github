@@ -19,6 +19,14 @@ inputs:
     description: 'Output file to write.'
     required: false
     default: 'README.md'
+  thesis:
+    description: 'One-paragraph thesis (your bet, in plain language); rendered as a lead blockquote under the bio. Empty = none.'
+    required: false
+    default: ''
+  read-first:
+    description: 'Funnel link: "Label | https://url" (or just a URL) -> a prominent "Start here" line. Empty = none.'
+    required: false
+    default: ''
   banner:
     description: 'Path prefix for a theme-aware SVG banner; emits <picture> with <prefix>-dark.svg / <prefix>-light.svg. Empty = no banner.'
     required: false
@@ -61,6 +69,8 @@ runs:
         ORGS: ${{ inputs.orgs }}
         GROUP_BY: ${{ inputs.group-by }}
         OUT: ${{ inputs.out }}
+        THESIS: ${{ inputs.thesis }}
+        READ_FIRST: ${{ inputs.read-first }}
         BANNER: ${{ inputs.banner }}
         FEATURED: ${{ inputs.featured }}
         FILTER: ${{ inputs.filter }}

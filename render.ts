@@ -72,11 +72,24 @@ export const stampDate = (sourceEpoch: number): string =>
 export const filterRepos = (repos: Repo[], filter?: string[]): Repo[] =>
   filter && filter.length ? repos.filter((r) => r.topics.some((t) => filter.includes(t))) : repos;
 
+// READ_FIRST="Label | https://url" (or just a URL) → a prominent start-here funnel line.
+// The skimmer gets the thesis (the bet), then one click to "read this first".
+export const funnelReadFirst = (raw: string | null | undefined): string | null => {
+  const trimmed = raw?.trim();
+  if (!trimmed) return null;
+  const [a, b] = trimmed.split("|").map((s) => s.trim());
+  const url = b ?? a;
+  const label = b ? a : url.replace(/^https?:\/\//, "");
+  return `**Start here — [${label}](${url})**`;
+};
+
 export type RenderOptions = {
   groupBy?: string;            // "topic" | "language" | "none"
   filter?: string[];
   banner?: string | null;
   featured?: string[];
+  thesis?: string | null;      // one-paragraph bet → lead blockquote under the bio
+  readFirst?: string | null;   // "Label | url" (or url) → a "Start here" funnel line
 };
 
 // The grouped repo blocks, shared by full-render and region-injection.
@@ -114,11 +127,12 @@ const view = (corpus: Corpus, opts: RenderOptions) => {
   return { shown, langs, featured, rest, groupBlocks };
 };
 
-// Full README: banner → name → bio → links → stats → Featured → groups → stamp.
+// Full README: banner → name → bio → thesis → funnel → links → stats → Featured → groups → stamp.
 export const renderProfile = (corpus: Corpus, opts: RenderOptions): string => {
   const { shown, featured, groupBlocks } = view(corpus, opts);
   const stamp = stampDate(corpus.provenance.sourceEpoch);
   const links = linksLine(corpus);
+  const readFirst = funnelReadFirst(opts.readFirst);
   const md: string[] = [];
   if (opts.banner) {
     md.push(
@@ -130,6 +144,8 @@ export const renderProfile = (corpus: Corpus, opts: RenderOptions): string => {
   }
   md.push(`# ${corpus.name}`);
   if (corpus.bio) md.push(`**${corpus.bio}**`);
+  if (opts.thesis?.trim()) md.push(opts.thesis.trim().split("\n").map((l) => `> ${l}`).join("\n"));
+  if (readFirst) md.push(readFirst);
   if (links) md.push(links);
   md.push(statsLine(corpus.owner, shown, corpus.provenance.sourceEpoch));
   if (featured.length) md.push(`## Featured\n\n${featured.map(repoLine).join("\n")}`);
