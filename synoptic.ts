@@ -19,8 +19,8 @@ import { renderProfile, injectionBlock, replaceMarkedRegion, filterRepos, type R
 const TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
 if (!TOKEN) { console.error("✗ set GITHUB_TOKEN"); process.exit(1); }
 const MODE = (process.argv[2] || process.env.MODE || "render").toLowerCase();
-const GROUP_BY = (process.env.GROUP_BY || "topic").toLowerCase();
-const OUT = process.env.OUT || "README.md";
+const GROUP_BY = (process.env.GROUP_BY || process.env["INPUT_GROUP-BY"] || "topic").toLowerCase();
+const OUT = process.env.OUT || process.env.INPUT_OUT || "README.md";
 const here = dirname(fileURLToPath(import.meta.url));
 
 async function gh(path: string) {
@@ -52,7 +52,7 @@ const user = (GH_USER ? await gh(`/users/${GH_USER}`) : await gh("/user")) as {
 const isMeta = (r: any) => r.name === ".github" || r.name.toLowerCase() === user.login.toLowerCase();
 const reposPath = GH_USER ? `/users/${user.login}/repos?type=owner` : "/user/repos?affiliation=owner&visibility=public";
 // ORGS (comma-separated) pulls in public org repos too — so your best work shows.
-const ORGS = (process.env.ORGS || "").split(",").map((s) => s.trim()).filter(Boolean);
+const ORGS = (process.env.ORGS || process.env.INPUT_ORGS || "").split(",").map((s) => s.trim()).filter(Boolean);
 const orgRaw = (await Promise.all(ORGS.map((o) => ghAll(`/orgs/${o}/repos?type=public`)))).flat();
 const seen = new Set<string>();
 const repos = ([...((await ghAll(reposPath)) as any[]), ...orgRaw])
@@ -108,17 +108,17 @@ if (MODE === "validate") {
   // gathers env → options and owns the IO (write, or region-inject into an existing file).
   const opts: RenderOptions = {
     groupBy: GROUP_BY,
-    filter: (process.env.FILTER || "").split(",").map((s) => s.trim()).filter(Boolean),
-    banner: process.env.BANNER?.trim() || null,
-    featured: (process.env.FEATURED || "").split(",").map((s) => s.trim()).filter(Boolean),
-    thesis: process.env.THESIS?.trim() || null,
-    readFirst: process.env.READ_FIRST?.trim() || null,
+    filter: (process.env.FILTER || process.env.INPUT_FILTER || "").split(",").map((s) => s.trim()).filter(Boolean),
+    banner: (process.env.BANNER || process.env.INPUT_BANNER)?.trim() || null,
+    featured: (process.env.FEATURED || process.env.INPUT_FEATURED || "").split(",").map((s) => s.trim()).filter(Boolean),
+    thesis: (process.env.THESIS || process.env.INPUT_THESIS)?.trim() || null,
+    readFirst: (process.env.READ_FIRST || process.env["INPUT_READ-FIRST"])?.trim() || null,
   };
   const shownCount = filterRepos(corpus.repos, opts.filter).length;
 
-  const injectInto = process.env.INJECT_INTO;
+  const injectInto = process.env.INJECT_INTO || process.env["INPUT_INJECT-INTO"];
   if (injectInto) {
-    const marker = process.env.MARKER || "synoptic";
+    const marker = process.env.MARKER || process.env.INPUT_MARKER || "synoptic";
     const block = injectionBlock(corpus, opts, marker);
     const file = await readFile(injectInto, "utf8");
     const replaced = replaceMarkedRegion(file, marker, block);
