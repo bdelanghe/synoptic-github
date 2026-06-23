@@ -42,4 +42,4 @@ jobs:
       - name: Install deps
         run: bun install --frozen-lockfile
       - name: Publish to JSR
-        run: bunx jsr publish
+        run: bunx jsr publish --allow-slow-types
