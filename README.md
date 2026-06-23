@@ -111,6 +111,23 @@ Topic-market sizes are cached to `.value-cache.json` (gitignored) to stay under 
 Search API's rate limit. Pure scoring lives in exported functions, covered by `value.test.ts`
 (`bun test`).
 
+## API usage & rate limits
+
+This tool uses the [GitHub REST API](https://docs.github.com/en/rest) via a personal access token
+or the Actions `GITHUB_TOKEN`. All usage is subject to
+[GitHub's Terms of Service](https://docs.github.com/en/site-policy/github-terms/github-terms-of-service)
+and the [GitHub Acceptable Use Policies](https://docs.github.com/en/site-policy/acceptable-use-policies/github-acceptable-use-policies).
+
+**Primary rate limit**: 5,000 requests/hour per authenticated user
+([REST API rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limiting-for-the-rest-api)).
+A typical synoptic run costs ~3–5 requests (user + repos + org repos). `value.mjs` caches
+topic-market lookups in `.value-cache.json` to avoid re-hitting the Search API (which has a
+separate, lower limit of 30 requests/minute).
+
+**Secondary rate limits** apply to rapid-fire polling
+([secondary rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limiting-for-the-rest-api#about-secondary-rate-limits)).
+Don't poll the API in a tight loop — wait and call once rather than watching continuously.
+
 ## License
 
 See `LICENSE`.
