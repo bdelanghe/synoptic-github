@@ -1,6 +1,6 @@
 // Tests for the pure triage layer of lists.mjs. No network/gh.
 import { test, expect } from "bun:test";
-import { DEFAULT_CONFIG, ageYears, lowSignal, listFor, proposeLists } from "./lists.mjs";
+import { DEFAULT_CONFIG, ageYears, lowSignal, listFor, proposeLists, exportMarkdown } from "./lists.mjs";
 
 const cfg = DEFAULT_CONFIG;
 const NOW = Date.parse("2026-06-22T00:00:00Z");
@@ -87,4 +87,22 @@ test("proposeLists caps the number of lists at maxLists (+ misc), folding the re
 test("proposeLists is deterministic", () => {
   const stars = [...many("ai", 15), ...many("cli", 12)];
   expect(proposeLists(stars, cfg, NOW)).toEqual(proposeLists(stars, cfg, NOW));
+});
+
+// ---- exportMarkdown ----------------------------------------------------------
+test("exportMarkdown writes every star into sections (pinned + lists + dropped), with links/stars", () => {
+  const stars = [
+    ...many("ai", 8, { description: "an ai thing", language: "Python" }),
+    star({ nameWithOwner: "big/landmark", topics: ["ai"], stars: 9000, description: "huge", language: "Go" }),
+    star({ nameWithOwner: "o/dead", isArchived: true }),
+  ];
+  const plan = proposeLists(stars, cfg, NOW);
+  const md = exportMarkdown(plan, "2026-06-23");
+  expect(md).toContain("# Starred archive — 10 repos");
+  expect(md).toContain("## pinned-stars");
+  expect(md).toContain("## ai (");
+  expect(md).toContain("## dropped (1)");
+  expect(md).toContain("[big/landmark](https://github.com/big/landmark) — huge `Go` ★9000");
+  // every kept + dropped repo is represented (count link bullets)
+  expect((md.match(/^- \[/gm) || []).length).toBe(plan.kept.length + plan.unstar.length + plan.pinned.length);
 });

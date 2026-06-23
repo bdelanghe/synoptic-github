@@ -11,7 +11,7 @@
 //
 // 100% your own account, public stars only (private starred repos are skipped).
 import { execFile } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -77,6 +77,29 @@ export const proposeLists = (stars, cfg, nowMs) => {
   const pinned = [...kept].sort((a, b) => b.stars - a.stars || a.nameWithOwner.localeCompare(b.nameWithOwner)).slice(0, cfg.pinnedCount);
 
   return { lists, pinned, unstar, kept, topicFreq };
+};
+
+// Full markdown archive of every star, grouped by list — the persistent record so the
+// live GitHub stars can be pruned to a targeted set without losing the organization.
+// (A GitHub List can't exist without stars; markdown can.)
+const repoMd = (r) =>
+  `- [${r.nameWithOwner}](https://github.com/${r.nameWithOwner})` +
+  (r.description ? ` — ${r.description}` : "") + (r.language ? ` \`${r.language}\`` : "") + (r.stars ? ` ★${r.stars}` : "");
+
+export const exportMarkdown = (plan, dateStr) => {
+  const total = plan.kept.length + plan.unstar.length;
+  const out = [
+    `# Starred archive — ${total} repos`,
+    `<sub>exported ${dateStr} by lists.mjs · the full record; live GitHub stars get pruned to a targeted set</sub>`,
+    "",
+    `## pinned-stars (${plan.pinned.length}) — kept starred`,
+    "",
+    ...plan.pinned.map(repoMd),
+    "",
+  ];
+  for (const l of plan.lists) out.push(`## ${l.label} (${l.items.length})`, "", ...l.items.map(repoMd), "");
+  if (plan.unstar.length) out.push(`## dropped (${plan.unstar.length}) — archived, will be unstarred`, "", ...plan.unstar.map(repoMd), "");
+  return out.join("\n") + "\n";
 };
 
 // ---- IO (runs only when invoked directly) -----------------------------------
@@ -191,6 +214,13 @@ const main = async () => {
   const existing = (await graphql(LISTS_Q))?.data?.viewer?.lists?.nodes ?? [];
 
   const plan = proposeLists(stars, cfg, nowMs);
+
+  const exportFile = argVal("--export");
+  if (exportFile) {
+    writeFileSync(exportFile, exportMarkdown(plan, new Date(nowMs).toISOString().slice(0, 10)));
+    console.log(`✓ archived ${stars.length} stars → ${exportFile} (${plan.lists.length} sections + ${plan.pinned.length} pinned + ${plan.unstar.length} dropped)`);
+    return;
+  }
 
   if (asJson) {
     console.log(JSON.stringify({
