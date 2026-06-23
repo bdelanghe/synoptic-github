@@ -89,6 +89,12 @@
           if ! ${pkgs.git}/bin/git diff --quiet; then
             ${pkgs.git}/bin/git config user.name "github-actions[bot]"
             ${pkgs.git}/bin/git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            # Wire credentials: actions/checkout sets up a helper on the runner but
+            # that helper is not available inside the container. Use GITHUB_TOKEN directly.
+            if [ -n "''${GITHUB_TOKEN:-}" ] && [ -n "''${GITHUB_REPOSITORY:-}" ]; then
+              ${pkgs.git}/bin/git remote set-url origin \
+                "https://x-access-token:''${GITHUB_TOKEN}@github.com/''${GITHUB_REPOSITORY}.git"
+            fi
             ${pkgs.git}/bin/git add -A
             ${pkgs.git}/bin/git commit -m "chore: refresh repositories (synoptic)"
             ${pkgs.git}/bin/git push
