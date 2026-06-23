@@ -137,7 +137,7 @@ const LISTS_Q = `{ viewer { lists(first: 100) { nodes { id name slug isPrivate i
 // gh api can't pass GraphQL list-typed ($listIds: [ID!]) variables cleanly; values are
 // JSON.stringify'd so a stray quote can't break out. ---
 const createList = (label) =>
-  graphql(`mutation { createUserList(input: {name: ${JSON.stringify(label)}, description: "Filed by lists.mjs", isPrivate: false}) { list { id name } } }`);
+  graphql(`mutation { createUserList(input: {name: ${JSON.stringify(label)}, description: ${JSON.stringify(`${label} — starred repos, auto-filed by lists.mjs`)}, isPrivate: false}) { list { id name } } }`);
 const fileItem = (repoId, listId) =>
   graphql(`mutation { updateUserListsForItem(input: {itemId: ${JSON.stringify(repoId)}, listIds: [${JSON.stringify(listId)}]}) { clientMutationId } }`);
 const unstarItem = (repoId) =>
