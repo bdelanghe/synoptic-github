@@ -84,6 +84,9 @@
         # (same logic as the old composite "Source epoch" step).
         entrypoint = pkgs.writeShellScript "entrypoint" ''
           set -euo pipefail
+          # GitHub Actions mounts the workspace owned by the runner user; inside the
+          # container we run as root — git refuses unless we mark it safe.
+          ${pkgs.git}/bin/git config --global --add safe.directory '*'
           export SOURCE_DATE_EPOCH=$(${pkgs.git}/bin/git log -1 --format=%ct)
           ${synoptic}/bin/synoptic-github "$@"
           if ! ${pkgs.git}/bin/git diff --quiet; then
