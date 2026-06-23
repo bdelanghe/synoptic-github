@@ -62,6 +62,25 @@ profile and `.github` meta repos), validates them against the Zod contract, tall
 languages, groups by the first topic, and writes Markdown. See [`EXAMPLE.md`](./EXAMPLE.md)
 for live output. Sole dependency: `zod`.
 
+## Curation & value (advisory)
+
+The render is deterministic. Two sibling tools (Node + `gh`) are deliberately *not* — they
+read live data to help you decide what to feature; they propose, you decide. Their only
+output that crosses back into the reproducible render is a suggested `FEATURED=` list.
+
+| Tool | Does |
+|---|---|
+| `curate.mjs` | Per-repo **disposition** (move / keep / archive / review) from name/topic/age heuristics |
+| `value.mjs` | Per-repo **market-fit score**, driven entirely by **stars** — your repo's stars (*traction*), the star-mass of its topic-market via `search` (*gravity*), and the topics/languages of repos *you* star (*alignment*). 100% public data, never reads a private repo. Surfaces a "your market" map, re-shelf suggestions, and mis-shelved repos. |
+
+```
+GH_USER=you ORGS=your-org node value.mjs        # ranked table + market map + FEATURED=
+```
+
+Topic-market sizes are cached to `.value-cache.json` (gitignored) to stay under the
+Search API's rate limit. Pure scoring lives in exported functions, covered by `value.test.ts`
+(`bun test`).
+
 ## License
 
 See `LICENSE`.
