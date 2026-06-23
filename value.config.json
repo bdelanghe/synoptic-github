@@ -1,0 +1,12 @@
+{
+  "weights": { "gravity": 0.40, "alignment": 0.35, "traction": 0.25 },
+  "featuredCount": 4,
+  "ceilingLog": 5,
+  "breadthLog": 5,
+  "ceilingWeight": 0.6,
+  "topicAffinityWeight": 0.6,
+  "starredTopicsToMarket": 12,
+  "maxTopicFetches": 28,
+  "retagSuggestions": 5,
+  "lowGravity": 0.35
+}
