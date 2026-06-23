@@ -111,6 +111,8 @@ if (MODE === "validate") {
     filter: (process.env.FILTER || "").split(",").map((s) => s.trim()).filter(Boolean),
     banner: process.env.BANNER?.trim() || null,
     featured: (process.env.FEATURED || "").split(",").map((s) => s.trim()).filter(Boolean),
+    thesis: process.env.THESIS?.trim() || null,
+    readFirst: process.env.READ_FIRST?.trim() || null,
   };
   const shownCount = filterRepos(corpus.repos, opts.filter).length;
 
