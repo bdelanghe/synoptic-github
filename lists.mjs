@@ -232,6 +232,7 @@ const main = async () => {
   const dir = dirname(fileURLToPath(import.meta.url));
   const cfg = loadConfig(dir);
   const nowMs = Date.now();
+  const user = process.env.GH_USER || "bdelanghe"; // owner whose repos define the "bet"
   const argVal = (n) => { const i = process.argv.indexOf(n); return i >= 0 ? process.argv[i + 1] : null; };
   const asJson = process.argv.includes("--json");
   const apply = process.argv.includes("--apply");
