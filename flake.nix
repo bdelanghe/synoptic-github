@@ -90,11 +90,13 @@
           export SOURCE_DATE_EPOCH=$(${pkgs.git}/bin/git log -1 --format=%ct)
           # Hydrate bare env names from INPUT_* when the Docker action env: passthrough
           # does not propagate them (observed with comma-separated values like FEATURED).
+          echo "DBG FEATURED='''${FEATURED:-<unset>}' INPUT_FEATURED='''${INPUT_FEATURED:-<unset>}'" >&2
           : "''${FEATURED:=''${INPUT_FEATURED:-}}"
           : "''${FILTER:=''${INPUT_FILTER:-}}"
           : "''${BANNER:=''${INPUT_BANNER:-}}"
           : "''${THESIS:=''${INPUT_THESIS:-}}"
           export FEATURED FILTER BANNER THESIS
+          echo "DBG-POST FEATURED='''${FEATURED:-<unset>}'" >&2
           ${synoptic}/bin/synoptic-github "$@"
           if ! ${pkgs.git}/bin/git diff --quiet; then
             ${pkgs.git}/bin/git config user.name "github-actions[bot]"
