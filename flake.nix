@@ -54,6 +54,27 @@
           '';
         };
 
+        # Runtime source tree for the container: TypeScript sources + pre-fetched
+        # node_modules symlink so `bun run synoptic.ts` works without network access.
+        # The compiled binary has a bun 1.3.13 quirk (prints help text and exits 0
+        # without running the embedded script), so the container uses `bun run` instead.
+        synopticRuntime = pkgs.stdenv.mkDerivation {
+          name = "synoptic-github-runtime";
+          src = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = pkgs.lib.fileset.unions [
+              ./synoptic.ts ./render.ts ./schema.ts ./vocabulary.ts ./languages.ts
+              ./package.json
+            ];
+          };
+          buildPhase = "true";
+          installPhase = ''
+            mkdir -p $out
+            cp synoptic.ts render.ts schema.ts vocabulary.ts languages.ts package.json $out/
+            ln -s ${nodeModules} $out/node_modules
+          '';
+        };
+
         # Advisory tools (follows / lists / value) — local-only, not in the container.
         # No external npm deps (only node built-ins + cross-imports), so no FOD needed.
         # Each binary is self-contained: bun bundles all transitive imports at compile time.
@@ -90,14 +111,15 @@
           export SOURCE_DATE_EPOCH=$(${pkgs.git}/bin/git log -1 --format=%ct)
           # Hydrate bare env names from INPUT_* when the Docker action env: passthrough
           # does not propagate them (observed with comma-separated values like FEATURED).
-          echo "DBG FEATURED=''${FEATURED:-UNSET} INPUT_FEATURED=''${INPUT_FEATURED:-UNSET}" >&2
           : "''${FEATURED:=''${INPUT_FEATURED:-}}"
           : "''${FILTER:=''${INPUT_FILTER:-}}"
           : "''${BANNER:=''${INPUT_BANNER:-}}"
           : "''${THESIS:=''${INPUT_THESIS:-}}"
           export FEATURED FILTER BANNER THESIS
-          echo "DBG-POST FEATURED=''${FEATURED:-UNSET}" >&2
-          ${synoptic}/bin/synoptic-github "$@"
+          # Use `bun run` instead of the compiled binary: bun 1.3.13's --compile output
+          # prints help text and exits 0 without running the embedded script in this
+          # container environment.
+          ${pkgs.bun}/bin/bun run ${synopticRuntime}/synoptic.ts "$@"
           if ! ${pkgs.git}/bin/git diff --quiet; then
             ${pkgs.git}/bin/git config user.name "github-actions[bot]"
             ${pkgs.git}/bin/git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -118,7 +140,7 @@
         container = pkgs.dockerTools.buildLayeredImage {
           name = "ghcr.io/bdelanghe/synoptic-github";
           tag = "latest";
-          contents = [ synoptic pkgs.git pkgs.cacert pkgs.bash pkgs.coreutils ];
+          contents = [ pkgs.bun synopticRuntime pkgs.git pkgs.cacert pkgs.bash pkgs.coreutils ];
           config = {
             Entrypoint = [ "${pkgs.bash}/bin/bash" "${entrypoint}" ];
             Env = [
