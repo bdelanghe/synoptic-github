@@ -75,28 +75,31 @@
           '';
         };
 
-        # Advisory tools (follows / lists / value) — local-only, not in the container.
-        # No external npm deps (only node built-ins + cross-imports), so no FOD needed.
-        # Each binary is self-contained: bun bundles all transitive imports at compile time.
+        # Advisory tools (follows / lists / value / curate / components-probe) —
+        # local-only, not in the container. No external npm deps (only node
+        # built-ins + cross-imports), so no FOD needed. Each binary is
+        # self-contained: bun bundles all transitive imports at compile time.
         tools = pkgs.stdenv.mkDerivation {
           pname = "synoptic-tools";
           version = "1.0.0";
           src = pkgs.lib.fileset.toSource {
             root = ./.;
             fileset = pkgs.lib.fileset.unions [
-              ./follows.mjs ./lists.mjs ./value.mjs
+              ./follows.mjs ./lists.mjs ./value.mjs ./curate.mjs ./components-probe.mjs
             ];
           };
           nativeBuildInputs = [ pkgs.bun ];
           buildPhase = ''
             export HOME=$TMPDIR
-            bun build --compile --outfile=follows follows.mjs
-            bun build --compile --outfile=lists   lists.mjs
-            bun build --compile --outfile=value   value.mjs
+            bun build --compile --outfile=follows         follows.mjs
+            bun build --compile --outfile=lists           lists.mjs
+            bun build --compile --outfile=value           value.mjs
+            bun build --compile --outfile=curate          curate.mjs
+            bun build --compile --outfile=components-probe components-probe.mjs
           '';
           installPhase = ''
             mkdir -p $out/bin
-            cp follows lists value $out/bin/
+            cp follows lists value curate components-probe $out/bin/
           '';
         };
 
