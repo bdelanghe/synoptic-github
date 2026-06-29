@@ -1,0 +1,22 @@
+action.yml
+  s_daf186a10ceb79::t_1e89fd0eff2e7f 67-69
+  s_daf186a10ceb79::t_965f3c50d42e59 10-21
+examples/fleet-status.yml
+  s_daf186a10ceb79::t_d2ac6389ea5c61 1-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "ce2f55460aa355067a49076ff41c6adf4d803e41",
+  "prompts": {},
+  "sessions": {
+    "s_daf186a10ceb79": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4b12e51a-0fe8-4a34-b79d-f09c5a08f4ef",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Robert DeLanghe <1240090+bdelanghe@users.noreply.github.com>"
+    }
+  }
+}
