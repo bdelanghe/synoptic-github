@@ -1,0 +1,43 @@
+# Fleet status board (synoptic Layer 2 — monitoring).
+#
+# Copy this into the ORG repo that should own the board — e.g.
+#   bounded-systems/.github/.github/workflows/fleet-status.yml
+# (or a dedicated dashboard repo). Keep it OUT of any repo whose README is the
+# deterministic Layer 1 artifact: this job writes a wall-clock, freshness-stamped
+# STATUS.md + status.json and is regenerated on a schedule, never diff-gated.
+#
+# The tool itself stays bdelanghe/synoptic-github; only the *deployment* lives in
+# the org. That keeps ownership honest: the tool is personal, the fleet board is
+# the org's.
+name: fleet-status
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # every 6h; tighten if you want a fresher board
+  workflow_dispatch: {}
+permissions:
+  contents: write           # to commit the board back
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pin to a tag or SHA in real use. The docker image must include status.ts
+      # (rebuilt after the status-mode change lands), else `mode: status` no-ops.
+      - uses: bdelanghe/synoptic-github@v2
+        with:
+          # The default GITHUB_TOKEN only reads THIS repo. Reading every org repo's
+          # CI runs + PRs needs org-wide read — a PAT now, or (preferred) the ghd
+          # GitHub-App token once it exists (see beads prx-e1c). Store as a secret.
+          GITHUB_TOKEN: ${{ secrets.FLEET_READ_TOKEN }}
+          mode: status
+          gh-user: bounded-systems   # the org to monitor; independent of where this runs
+          status-out: STATUS.md
+
+      - name: commit the board
+        run: |
+          git config user.name  'fleet-status[bot]'
+          git config user.email 'fleet-status@users.noreply.github.com'
+          git add STATUS.md status.json
+          git diff --cached --quiet || git commit -m "chore: fleet status $(date -u +%FT%TZ)"
+          git push

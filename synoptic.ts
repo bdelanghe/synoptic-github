@@ -15,6 +15,7 @@ import { Repo, Corpus, type Provenance } from "./schema.ts";
 import { TOPICS, suggestTopics } from "./vocabulary.ts";
 import { LANGUAGE_NAMES } from "./languages.ts";
 import { renderProfile, injectionBlock, replaceMarkedRegion, filterRepos, type RenderOptions } from "./render.ts";
+import { renderStatus, ciOf, RepoStatus, BeadsSummary, type RepoStatus as RepoStatusT } from "./status.ts";
 
 const TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
 if (!TOKEN) { console.error("✗ set GITHUB_TOKEN"); process.exit(1); }
@@ -103,6 +104,59 @@ if (MODE === "validate") {
     console.log(`  gh api --method PUT repos/${r.fullName}/topics ${s.map((t) => `-f 'names[]=${t}'`).join(" ")}`);
   }
   console.log(`suggest: ${n} untagged repo(s) with suggestions`);
+} else if (MODE === "status") {
+  // ---- monitoring layer (see status.ts) ------------------------------------
+  // Right-join live signal onto the corpus: latest CI run + open PR/issue counts.
+  // Wall-clock by nature, so this writes its OWN artifact (never the README) and
+  // stamps real time — the one place Date.now() is correct in this tool.
+  // Per repo: GET /repos (open_issues_count, default_branch) · /actions/runs?per_page=1
+  //   · /pulls?state=open. One bad repo degrades to ⚪ rather than failing the board.
+  const POOL = Number(process.env.STATUS_CONCURRENCY || 8);
+  const statuses = new Map<string, RepoStatusT>();
+  const queue = [...corpus.repos];
+  const worker = async () => {
+    for (let r = queue.shift(); r; r = queue.shift()) {
+      try {
+        const meta = (await gh(`/repos/${r.fullName}`)) as { open_issues_count: number; default_branch: string };
+        const runs = (await gh(`/repos/${r.fullName}/actions/runs?branch=${meta.default_branch}&per_page=1`)) as {
+          workflow_runs?: { status?: string; conclusion?: string | null; html_url?: string; created_at?: string }[];
+        };
+        const prs = (await gh(`/repos/${r.fullName}/pulls?state=open&per_page=100`)) as any[];
+        const run = runs.workflow_runs?.[0];
+        const openPRs = prs.length;
+        statuses.set(r.fullName, RepoStatus.parse({
+          fullName: r.fullName,
+          ci: ciOf(run),
+          ciUrl: run?.html_url ?? null,
+          ciRunAt: run?.created_at ?? null,
+          openPRs,
+          openIssues: Math.max(0, meta.open_issues_count - openPRs), // open_issues_count counts PRs too
+        }));
+      } catch (e) {
+        console.warn(`⚠ ${r.fullName}: status unavailable (${(e as Error).message.split("\n")[0]})`);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(POOL, corpus.repos.length) }, worker));
+
+  // Optional org-backlog summary. The caller (where a beads daemon is reachable —
+  // never CI) computes counts and passes them as BEADS_SUMMARY JSON; synoptic stays
+  // generic and just renders them. Malformed/absent → the line is simply omitted.
+  let backlog = null;
+  const raw = process.env.BEADS_SUMMARY || process.env.INPUT_BEADS_SUMMARY;
+  if (raw) {
+    const parsed = BeadsSummary.safeParse(JSON.parse(raw));
+    if (parsed.success) backlog = parsed.data;
+    else console.warn(`⚠ BEADS_SUMMARY ignored (does not match schema): ${parsed.error.issues[0]?.message}`);
+  }
+
+  const stampISO = new Date().toISOString(); // monitoring layer: real time is intended here
+  const md = renderStatus(corpus, statuses, stampISO, backlog);
+  const STATUS_OUT = process.env.STATUS_OUT || process.env.INPUT_STATUS_OUT || "STATUS.md";
+  await writeFile(STATUS_OUT, md);
+  await writeFile(STATUS_OUT.replace(/\.md$/, "") + ".json", JSON.stringify({ stampISO, statuses: [...statuses.values()] }, null, 2) + "\n");
+  const red = [...statuses.values()].filter((s) => s.ci === "failure").length;
+  console.log(`✓ wrote ${STATUS_OUT} — ${statuses.size}/${corpus.repos.length} repos, ${red} red, stamped ${stampISO}`);
 } else if (MODE === "render") {
   // Render is a pure function of the corpus + options (see render.ts); this mode just
   // gathers env → options and owns the IO (write, or region-inject into an existing file).
