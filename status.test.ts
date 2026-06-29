@@ -76,6 +76,20 @@ test("renderStatus tallies open PRs across the fleet and includes the stamp", ()
   expect(out).toContain("2026-06-29T01:00:00Z");
 });
 
+// ---- backlog summary ---------------------------------------------------------
+test("renderStatus omits the backlog line when none is supplied", () => {
+  const out = renderStatus(corpus([repo({ name: "a" })]), new Map(), "2026-06-29T01:00:00Z");
+  expect(out).not.toContain("📋 backlog");
+});
+
+test("renderStatus renders a supplied backlog summary, with an optional board link", () => {
+  const c = corpus([repo({ name: "a" })]);
+  expect(renderStatus(c, new Map(), "2026-06-29T01:00:00Z", { ready: 12, blocked: 3, open: 50 }))
+    .toContain("📋 backlog: 12 ready · 3 blocked · 50 open");
+  expect(renderStatus(c, new Map(), "2026-06-29T01:00:00Z", { ready: 1, blocked: 0, open: 1, url: "https://x/board" }))
+    .toContain("📋 backlog: 1 ready · 0 blocked · 1 open — [board](https://x/board)");
+});
+
 // A repo with no fetched status must still appear (as ⚪), never silently vanish.
 test("renderStatus renders repos missing a status as an empty/none row", () => {
   const out = renderStatus(corpus([repo({ name: "ghost" })]), new Map(), "2026-06-29T01:00:00Z");

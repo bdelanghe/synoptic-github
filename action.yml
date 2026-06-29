@@ -19,6 +19,10 @@ inputs:
     description: 'status mode: output file for the fleet board (a sibling .json is written too).'
     required: false
     default: 'STATUS.md'
+  beads-summary:
+    description: 'status mode: optional org-backlog summary as JSON {"ready","blocked","open","url"?}. Compute it where a beads/issue daemon is reachable (NOT stateless CI) and pass it in; omitted/malformed = no backlog line.'
+    required: false
+    default: ''
   group-by:
     description: 'topic | language | none'
     required: false
@@ -67,6 +71,7 @@ runs:
     MODE: ${{ inputs.mode }}
     GH_USER: ${{ inputs.gh-user }}
     STATUS_OUT: ${{ inputs.status-out }}
+    BEADS_SUMMARY: ${{ inputs.beads-summary }}
     ORGS: ${{ inputs.orgs }}
     GROUP_BY: ${{ inputs.group-by }}
     OUT: ${{ inputs.out }}

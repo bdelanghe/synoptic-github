@@ -15,7 +15,7 @@ import { Repo, Corpus, type Provenance } from "./schema.ts";
 import { TOPICS, suggestTopics } from "./vocabulary.ts";
 import { LANGUAGE_NAMES } from "./languages.ts";
 import { renderProfile, injectionBlock, replaceMarkedRegion, filterRepos, type RenderOptions } from "./render.ts";
-import { renderStatus, ciOf, RepoStatus, type RepoStatus as RepoStatusT } from "./status.ts";
+import { renderStatus, ciOf, RepoStatus, BeadsSummary, type RepoStatus as RepoStatusT } from "./status.ts";
 
 const TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
 if (!TOKEN) { console.error("✗ set GITHUB_TOKEN"); process.exit(1); }
@@ -139,8 +139,19 @@ if (MODE === "validate") {
   };
   await Promise.all(Array.from({ length: Math.min(POOL, corpus.repos.length) }, worker));
 
+  // Optional org-backlog summary. The caller (where a beads daemon is reachable —
+  // never CI) computes counts and passes them as BEADS_SUMMARY JSON; synoptic stays
+  // generic and just renders them. Malformed/absent → the line is simply omitted.
+  let backlog = null;
+  const raw = process.env.BEADS_SUMMARY || process.env.INPUT_BEADS_SUMMARY;
+  if (raw) {
+    const parsed = BeadsSummary.safeParse(JSON.parse(raw));
+    if (parsed.success) backlog = parsed.data;
+    else console.warn(`⚠ BEADS_SUMMARY ignored (does not match schema): ${parsed.error.issues[0]?.message}`);
+  }
+
   const stampISO = new Date().toISOString(); // monitoring layer: real time is intended here
-  const md = renderStatus(corpus, statuses, stampISO);
+  const md = renderStatus(corpus, statuses, stampISO, backlog);
   const STATUS_OUT = process.env.STATUS_OUT || process.env.INPUT_STATUS_OUT || "STATUS.md";
   await writeFile(STATUS_OUT, md);
   await writeFile(STATUS_OUT.replace(/\.md$/, "") + ".json", JSON.stringify({ stampISO, statuses: [...statuses.values()] }, null, 2) + "\n");
