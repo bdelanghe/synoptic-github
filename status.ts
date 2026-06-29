@@ -41,9 +41,17 @@ export type BeadsSummary = z.infer<typeof BeadsSummary>;
 
 const ICON: Record<CI, string> = { success: "🟢", failure: "🔴", pending: "🟡", none: "⚪" };
 
-/** GitHub Actions run → our 4-state CI. success only if it actually succeeded. */
-export const ciOf = (run: { status?: string; conclusion?: string | null } | undefined): CI =>
-  !run ? "none" : run.status !== "completed" ? "pending" : run.conclusion === "success" ? "success" : "failure";
+// Default-branch check-runs → our 4-state CI, GitHub-rollup style: any concluded
+// failure → failure; else any still-running → pending; else success; no checks → none.
+// Reads via the Checks API (checks:read) rather than Actions (actions:read), so a
+// bucketed token that grants checks but not actions (e.g. prx-forge) can read CI.
+const BAD_CONCLUSIONS = new Set(["failure", "cancelled", "timed_out", "action_required", "startup_failure", "stale"]);
+export const ciOfChecks = (checks: { status?: string; conclusion?: string | null }[] | undefined): CI => {
+  if (!checks || !checks.length) return "none";
+  if (checks.some((c) => c.status === "completed" && c.conclusion != null && BAD_CONCLUSIONS.has(c.conclusion))) return "failure";
+  if (checks.some((c) => c.status !== "completed")) return "pending";
+  return "success";
+};
 
 /** One repo → one status row, linking the CI cell to the run when we have a url. */
 export const statusRow = (r: Repo, s: RepoStatus): string => {

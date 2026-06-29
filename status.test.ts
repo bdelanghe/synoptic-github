@@ -3,7 +3,7 @@
 // is injected by the caller, so the render stays testable. No network/fs/env.
 import { test, expect } from "bun:test";
 import type { Corpus, Repo } from "./schema.ts";
-import { ciOf, statusRow, renderStatus, type RepoStatus } from "./status.ts";
+import { ciOfChecks, statusRow, renderStatus, type RepoStatus } from "./status.ts";
 
 const repo = (p: Partial<Repo> & { name: string }): Repo => ({
   name: p.name,
@@ -28,14 +28,25 @@ const status = (p: Partial<RepoStatus> & { fullName: string }): RepoStatus => ({
 });
 
 // ---- ciOf --------------------------------------------------------------------
-test("ciOf collapses a GitHub run to four states", () => {
-  expect(ciOf(undefined)).toBe("none");
-  expect(ciOf({ status: "in_progress" })).toBe("pending");
-  expect(ciOf({ status: "queued" })).toBe("pending");
-  expect(ciOf({ status: "completed", conclusion: "success" })).toBe("success");
-  expect(ciOf({ status: "completed", conclusion: "failure" })).toBe("failure");
-  expect(ciOf({ status: "completed", conclusion: "cancelled" })).toBe("failure");
-  expect(ciOf({ status: "completed", conclusion: null })).toBe("failure");
+test("ciOfChecks aggregates default-branch check-runs to four states (GitHub-rollup)", () => {
+  expect(ciOfChecks(undefined)).toBe("none");
+  expect(ciOfChecks([])).toBe("none");
+  // all good → success (neutral/skipped count as non-failing)
+  expect(ciOfChecks([
+    { status: "completed", conclusion: "success" },
+    { status: "completed", conclusion: "skipped" },
+  ])).toBe("success");
+  // any still-running (and nothing failed) → pending
+  expect(ciOfChecks([
+    { status: "completed", conclusion: "success" },
+    { status: "in_progress" },
+  ])).toBe("pending");
+  // any concluded failure → failure, even if others are still running (rollup precedence)
+  expect(ciOfChecks([
+    { status: "in_progress" },
+    { status: "completed", conclusion: "failure" },
+  ])).toBe("failure");
+  expect(ciOfChecks([{ status: "completed", conclusion: "timed_out" }])).toBe("failure");
 });
 
 // ---- statusRow ---------------------------------------------------------------
