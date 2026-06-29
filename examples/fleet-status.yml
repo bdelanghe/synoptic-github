@@ -15,7 +15,7 @@ on:
     - cron: '0 */6 * * *'   # every 6h; tighten if you want a fresher board
   workflow_dispatch: {}
 permissions:
-  contents: write           # to commit the board back
+  contents: write           # the action commits the board back to this repo
 jobs:
   status:
     runs-on: ubuntu-latest
@@ -23,21 +23,18 @@ jobs:
       - uses: actions/checkout@v4
 
       # Pin to a tag or SHA in real use. The docker image must include status.ts
-      # (rebuilt after the status-mode change lands), else `mode: status` no-ops.
+      # (>= v2.2.6), else `mode: status` no-ops.
       - uses: bdelanghe/synoptic-github@v2
         with:
-          # The default GITHUB_TOKEN only reads THIS repo. Reading every org repo's
-          # CI runs + PRs needs org-wide read — a PAT now, or (preferred) the ghd
+          # Reads every org repo's CI runs + PRs (org-wide read) AND the action's
+          # container commits+pushes the board back to THIS repo — so this token
+          # also needs contents:write here. A PAT now, or (preferred) the ghd
           # GitHub-App token once it exists (see beads prx-e1c). Store as a secret.
           GITHUB_TOKEN: ${{ secrets.FLEET_READ_TOKEN }}
           mode: status
           gh-user: bounded-systems   # the org to monitor; independent of where this runs
           status-out: STATUS.md
 
-      - name: commit the board
-        run: |
-          git config user.name  'fleet-status[bot]'
-          git config user.email 'fleet-status@users.noreply.github.com'
-          git add STATUS.md status.json
-          git diff --cached --quiet || git commit -m "chore: fleet status $(date -u +%FT%TZ)"
-          git push
+      # No commit step here on purpose: the action's container entrypoint already
+      # runs git add/commit/push when the board changes, using the GITHUB_TOKEN
+      # above. Adding a second commit step would be redundant (and a no-op).
