@@ -123,7 +123,12 @@
           # prints help text and exits 0 without running the embedded script in this
           # container environment.
           ${pkgs.bun}/bin/bun run ${synopticRuntime}/synoptic.ts "$@"
-          if ! ${pkgs.git}/bin/git diff --quiet; then
+          # Stage first, THEN check: `git diff --quiet` ignores untracked files, so a
+          # brand-new output (e.g. a first STATUS.md) would read as "no change" and
+          # never get committed. `git add -A` + `git diff --cached --quiet` catches
+          # new, modified, and deleted files alike.
+          ${pkgs.git}/bin/git add -A
+          if ! ${pkgs.git}/bin/git diff --cached --quiet; then
             ${pkgs.git}/bin/git config user.name "github-actions[bot]"
             ${pkgs.git}/bin/git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             # Wire credentials: actions/checkout sets up a helper on the runner but
@@ -132,7 +137,6 @@
               ${pkgs.git}/bin/git remote set-url origin \
                 "https://x-access-token:''${GITHUB_TOKEN}@github.com/''${GITHUB_REPOSITORY}.git"
             fi
-            ${pkgs.git}/bin/git add -A
             ${pkgs.git}/bin/git commit -m "chore: refresh repositories (synoptic)"
             ${pkgs.git}/bin/git push
           else
