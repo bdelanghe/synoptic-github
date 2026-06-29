@@ -7,6 +7,18 @@ inputs:
   GITHUB_TOKEN:
     description: 'A token that can read your repositories.'
     required: true
+  mode:
+    description: 'render | validate | suggest | status. status writes a freshness-stamped fleet board (CI + open PRs/issues) instead of the README.'
+    required: false
+    default: 'render'
+  gh-user:
+    description: 'Read this owner/org instead of the token owner (e.g. bounded-systems). Empty = the token owner.'
+    required: false
+    default: ''
+  status-out:
+    description: 'status mode: output file for the fleet board (a sibling .json is written too).'
+    required: false
+    default: 'STATUS.md'
   group-by:
     description: 'topic | language | none'
     required: false
@@ -52,6 +64,9 @@ runs:
   image: docker://ghcr.io/bdelanghe/synoptic-github:latest
   env:
     GITHUB_TOKEN: ${{ inputs.GITHUB_TOKEN }}
+    MODE: ${{ inputs.mode }}
+    GH_USER: ${{ inputs.gh-user }}
+    STATUS_OUT: ${{ inputs.status-out }}
     ORGS: ${{ inputs.orgs }}
     GROUP_BY: ${{ inputs.group-by }}
     OUT: ${{ inputs.out }}
