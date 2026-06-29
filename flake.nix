@@ -63,14 +63,14 @@
           src = pkgs.lib.fileset.toSource {
             root = ./.;
             fileset = pkgs.lib.fileset.unions [
-              ./synoptic.ts ./render.ts ./schema.ts ./vocabulary.ts ./languages.ts
+              ./synoptic.ts ./render.ts ./status.ts ./schema.ts ./vocabulary.ts ./languages.ts
               ./package.json
             ];
           };
           buildPhase = "true";
           installPhase = ''
             mkdir -p $out
-            cp synoptic.ts render.ts schema.ts vocabulary.ts languages.ts package.json $out/
+            cp synoptic.ts render.ts status.ts schema.ts vocabulary.ts languages.ts package.json $out/
             ln -s ${nodeModules} $out/node_modules
           '';
         };
