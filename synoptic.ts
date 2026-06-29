@@ -15,7 +15,7 @@ import { Repo, Corpus, type Provenance } from "./schema.ts";
 import { TOPICS, suggestTopics } from "./vocabulary.ts";
 import { LANGUAGE_NAMES } from "./languages.ts";
 import { renderProfile, injectionBlock, replaceMarkedRegion, filterRepos, type RenderOptions } from "./render.ts";
-import { renderStatus, ciOf, RepoStatus, BeadsSummary, type RepoStatus as RepoStatusT } from "./status.ts";
+import { renderStatus, ciOfChecks, RepoStatus, BeadsSummary, type RepoStatus as RepoStatusT } from "./status.ts";
 
 const TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
 if (!TOKEN) { console.error("✗ set GITHUB_TOKEN"); process.exit(1); }
@@ -109,8 +109,9 @@ if (MODE === "validate") {
   // Right-join live signal onto the corpus: latest CI run + open PR/issue counts.
   // Wall-clock by nature, so this writes its OWN artifact (never the README) and
   // stamps real time — the one place Date.now() is correct in this tool.
-  // Per repo: GET /repos (open_issues_count, default_branch) · /actions/runs?per_page=1
-  //   · /pulls?state=open. One bad repo degrades to ⚪ rather than failing the board.
+  // Per repo: GET /repos (open_issues_count, default_branch) · default-branch
+  //   /check-runs (Checks API — checks:read, NOT actions:read, so a bucketed
+  //   prx-forge token works) · /pulls?state=open. A bad repo degrades to ⚪.
   const POOL = Number(process.env.STATUS_CONCURRENCY || 8);
   const statuses = new Map<string, RepoStatusT>();
   const queue = [...corpus.repos];
@@ -118,17 +119,20 @@ if (MODE === "validate") {
     for (let r = queue.shift(); r; r = queue.shift()) {
       try {
         const meta = (await gh(`/repos/${r.fullName}`)) as { open_issues_count: number; default_branch: string };
-        const runs = (await gh(`/repos/${r.fullName}/actions/runs?branch=${meta.default_branch}&per_page=1`)) as {
-          workflow_runs?: { status?: string; conclusion?: string | null; html_url?: string; created_at?: string }[];
+        const checks = (await gh(`/repos/${r.fullName}/commits/${meta.default_branch}/check-runs`)) as {
+          check_runs?: { status?: string; conclusion?: string | null; html_url?: string; started_at?: string; completed_at?: string }[];
         };
         const prs = (await gh(`/repos/${r.fullName}/pulls?state=open&per_page=100`)) as any[];
-        const run = runs.workflow_runs?.[0];
+        const runs = checks.check_runs ?? [];
+        const ci = ciOfChecks(runs);
+        // Link to a representative check: a failing one when red, else the first.
+        const lead = runs.find((c) => c.status === "completed" && c.conclusion != null && c.conclusion !== "success" && c.conclusion !== "neutral" && c.conclusion !== "skipped") ?? runs[0];
         const openPRs = prs.length;
         statuses.set(r.fullName, RepoStatus.parse({
           fullName: r.fullName,
-          ci: ciOf(run),
-          ciUrl: run?.html_url ?? null,
-          ciRunAt: run?.created_at ?? null,
+          ci,
+          ciUrl: lead?.html_url ?? null,
+          ciRunAt: lead?.completed_at ?? lead?.started_at ?? null,
           openPRs,
           openIssues: Math.max(0, meta.open_issues_count - openPRs), // open_issues_count counts PRs too
         }));
